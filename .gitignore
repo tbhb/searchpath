@@ -1,0 +1,93 @@
+# Python bytecode
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution and packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+.venv-*/
+env/
+venv/
+
+# Testing
+.codspeed/
+.hypothesis/
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.json
+coverage-*.json
+coverage.xml
+*.cover
+*.py,cover
+
+# Type checking and linting
+.mypy_cache/
+.ruff_cache/
+
+# Mutation testing
+*.sqlite
+mutation-report.html
+.mutation-worktree/
+
+# Documentation
+site/
+docs/_build/
+
+# Translations
+*.mo
+*.pot
+
+# Logs
+*.log
+
+# Node.js (for markdownlint)
+node_modules/
+
+# Environment
+.env
+.envrc
+.env.*
+!.env.example
+
+# IDE/Editor (commented - prefer global gitignore)
+# .idea/
+# .vscode/
+
+# Project-specific local files
+.internal/
+.benchmarks/
+.claude
+
+# Local configuration
+mise.local.toml
+mkdocs.pr.yml
+tmp/
+
+# Vale styles (synced from packages via `vale sync`)
+.vale/
+
+# Wrangler (Cloudflare Workers)
+.wrangler/
+
+# SBOM files
+*.cdx.json
+
+# Build artifacts
+.codspeed/
+build/
+.complexipy_cache
