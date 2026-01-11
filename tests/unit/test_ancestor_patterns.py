@@ -1,5 +1,3 @@
-"""Unit tests for ancestor pattern loading."""
-
 from pathlib import Path  # noqa: TC003 - needed at runtime for tmp_path fixture
 
 import pytest

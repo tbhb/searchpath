@@ -9,6 +9,7 @@ from searchpath._exceptions import (
     PatternSyntaxError,
     SearchPathError,
 )
+from searchpath._functions import all, first, match, matches  # noqa: A004
 from searchpath._match import Match
 from searchpath._matchers import (
     GitignoreMatcher,
@@ -34,4 +35,8 @@ __all__ = [
     "SearchPath",
     "SearchPathError",
     "__version__",
+    "all",
+    "first",
+    "match",
+    "matches",
 ]
