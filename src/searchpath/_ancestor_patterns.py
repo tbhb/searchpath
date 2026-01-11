@@ -152,4 +152,8 @@ def merge_patterns(
     Returns:
         Merged pattern list with ancestors first, inline patterns last.
     """
+    if not ancestor_patterns:
+        return list(inline_patterns) if inline_patterns else []
+    if not inline_patterns:
+        return list(ancestor_patterns)
     return [*ancestor_patterns, *inline_patterns]

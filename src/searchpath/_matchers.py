@@ -542,7 +542,7 @@ class GitignoreMatcher:
         False
     """
 
-    __slots__ = ()
+    __slots__ = ("_spec_cache",)
 
     def __init__(self) -> None:
         """Initialize the matcher, checking for pathspec availability."""
@@ -554,6 +554,7 @@ class GitignoreMatcher:
                 "Install it with: pip install searchpath[gitignore]"
             )
             raise ImportError(msg) from e
+        self._spec_cache: dict[tuple[str, ...], GitIgnoreSpec] = {}
 
     @property
     def supports_negation(self) -> bool:
@@ -649,9 +650,16 @@ class GitignoreMatcher:
         Raises:
             PatternSyntaxError: If patterns have invalid syntax.
         """
+        cache_key = tuple(patterns)
+        if cache_key in self._spec_cache:
+            return self._spec_cache[cache_key]
+
         from pathspec import GitIgnoreSpec  # noqa: PLC0415
 
         try:
-            return GitIgnoreSpec.from_lines(patterns)
+            spec = GitIgnoreSpec.from_lines(patterns)
         except Exception as e:
             raise PatternSyntaxError(str(patterns), str(e)) from e
+
+        self._spec_cache[cache_key] = spec
+        return spec
