@@ -385,3 +385,133 @@ class GlobMatcher:
         if char in r"\^-]":
             result.append("\\")
         result.append(char)
+
+
+@final
+class RegexMatcher:
+    r"""Path matcher using Python regular expressions.
+
+    Uses the re module for full regex syntax. Patterns are matched against
+    the entire path using fullmatch() for consistency with GlobMatcher.
+
+    Supports:
+        - Full Python regex syntax (re module)
+        - Character classes, quantifiers, alternation, groups
+
+    Does not support:
+        - Negation patterns (``!pattern``)
+        - Directory-only patterns (``pattern/``)
+
+    Example:
+        >>> matcher = RegexMatcher()
+        >>> matcher.matches("src/main.py", include=[r".*\.py"])
+        True
+        >>> matcher.matches("test_main.py", exclude=[r"test_.*"])
+        False
+    """
+
+    __slots__ = ("_cache",)
+
+    def __init__(self) -> None:
+        """Initialize the matcher with an empty pattern cache."""
+        self._cache: dict[str, _CompiledPattern] = {}
+
+    @property
+    def supports_negation(self) -> bool:
+        """Whether this matcher supports negation patterns.
+
+        Returns:
+            Always False for RegexMatcher.
+        """
+        return False
+
+    @property
+    def supports_dir_only(self) -> bool:
+        """Whether this matcher supports directory-only patterns.
+
+        Returns:
+            Always False for RegexMatcher.
+        """
+        return False
+
+    def matches(
+        self,
+        path: str,
+        *,
+        is_dir: bool = False,
+        include: Sequence[str] = (),
+        exclude: Sequence[str] = (),
+    ) -> bool:
+        """Check if path matches the include/exclude patterns.
+
+        A path matches if:
+        - It matches at least one include pattern (or include is empty), AND
+        - It does not match any exclude pattern
+
+        Args:
+            path: Relative path from search root (forward slashes).
+            is_dir: Whether the path represents a directory (ignored by RegexMatcher).
+            include: Patterns the path must match (empty = match all).
+            exclude: Patterns that reject the path.
+
+        Returns:
+            True if the path should be included in results.
+
+        Raises:
+            PatternSyntaxError: If any pattern has invalid regex syntax.
+        """
+        del is_dir  # Unused by RegexMatcher (no dir_only support)
+
+        # Check include patterns (empty = match all)
+        if include:
+            included = any(self._match_pattern(path, p) for p in include)
+            if not included:
+                return False
+
+        # Check exclude patterns
+        if exclude:
+            excluded = any(self._match_pattern(path, p) for p in exclude)
+            if excluded:
+                return False
+
+        return True
+
+    def _match_pattern(self, path: str, pattern: str) -> bool:
+        """Test if a path matches a single pattern.
+
+        Args:
+            path: Relative path from search root.
+            pattern: Regex pattern to match against.
+
+        Returns:
+            True if the path matches the pattern.
+        """
+        compiled = self._compile(pattern)
+        return compiled.regex.fullmatch(path) is not None
+
+    def _compile(self, pattern: str) -> _CompiledPattern:
+        """Compile a regex pattern (with caching).
+
+        Args:
+            pattern: The regex pattern string to compile.
+
+        Returns:
+            A compiled pattern ready for matching.
+
+        Raises:
+            PatternSyntaxError: If the pattern is empty or has invalid syntax.
+        """
+        if pattern in self._cache:
+            return self._cache[pattern]
+
+        if not pattern:
+            raise PatternSyntaxError(pattern, "empty pattern")
+
+        try:
+            regex = re.compile(pattern)
+        except re.error as e:
+            raise PatternSyntaxError(pattern, str(e)) from e
+
+        compiled = _CompiledPattern(regex=regex, pattern=pattern)
+        self._cache[pattern] = compiled
+        return compiled
