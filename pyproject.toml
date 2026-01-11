@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "searchpath"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "A library for filesystem path discovery and pattern matching."
 readme = "README.md"
 license = "MIT"
