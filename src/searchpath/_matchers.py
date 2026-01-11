@@ -33,11 +33,11 @@ class PathMatcher(Protocol):  # pragma: no cover
     Each matcher handles pattern compilation internally.
 
     Example:
-        >>> matcher = GlobMatcher()
-        >>> matcher.matches("src/main.py", include=["**/*.py"])
-        True
-        >>> matcher.matches("src/main.py", exclude=["**/test_*"])
-        True
+        ```python
+        matcher = GlobMatcher()
+        matcher.matches("src/main.py", include=["**/*.py"])  # True
+        matcher.matches("src/main.py", exclude=["**/test_*"])  # True
+        ```
     """
 
     @property
@@ -98,11 +98,11 @@ class GlobMatcher:
         - Anchored patterns (``/pattern``)
 
     Example:
-        >>> matcher = GlobMatcher()
-        >>> matcher.matches("src/main.py", include=["**/*.py"])
-        True
-        >>> matcher.matches("test_main.py", exclude=["test_*"])
-        False
+        ```python
+        matcher = GlobMatcher()
+        matcher.matches("src/main.py", include=["**/*.py"])  # True
+        matcher.matches("test_main.py", exclude=["test_*"])  # False
+        ```
     """
 
     __slots__ = ("_cache",)
@@ -156,11 +156,11 @@ class GlobMatcher:
             PatternSyntaxError: If any pattern has invalid syntax.
 
         Example:
-            >>> matcher = GlobMatcher()
-            >>> matcher.matches("main.py", include=["*.py"])
-            True
-            >>> matcher.matches("main.py", exclude=["main.*"])
-            False
+            ```python
+            matcher = GlobMatcher()
+            matcher.matches("main.py", include=["*.py"])  # True
+            matcher.matches("main.py", exclude=["main.*"])  # False
+            ```
         """
         del is_dir  # Unused by GlobMatcher (no dir_only support)
 
@@ -399,11 +399,11 @@ class RegexMatcher:
         - Directory-only patterns (``pattern/``)
 
     Example:
-        >>> matcher = RegexMatcher()
-        >>> matcher.matches("src/main.py", include=[r".*\.py"])
-        True
-        >>> matcher.matches("test_main.py", exclude=[r"test_.*"])
-        False
+        ```python
+        matcher = RegexMatcher()
+        matcher.matches("src/main.py", include=[r".*\.py"])  # True
+        matcher.matches("test_main.py", exclude=[r"test_.*"])  # False
+        ```
     """
 
     __slots__ = ("_cache",)
@@ -531,11 +531,11 @@ class GitignoreMatcher:
         pip install searchpath[gitignore]
 
     Example:
-        >>> matcher = GitignoreMatcher()
-        >>> matcher.matches("src/main.py", include=["*.py"])
-        True
-        >>> matcher.matches("test_main.py", exclude=["test_*"])
-        False
+        ```python
+        matcher = GitignoreMatcher()
+        matcher.matches("src/main.py", include=["*.py"])  # True
+        matcher.matches("test_main.py", exclude=["test_*"])  # False
+        ```
     """
 
     __slots__ = ("_spec_cache",)

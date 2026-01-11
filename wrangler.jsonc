@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "searchpath-docs",
+  "compatibility_date": "2025-01-12",
+  "assets": {
+    "directory": "./site",
+    "not_found_handling": "404-page"
+  },
+  "observability": {
+    "enabled": true
+  },
+
+  // Production routes - deploy to jsonlt.org
+  "routes": [{ "pattern": "searchpath.tbhb.dev", "custom_domain": true }],
+
+  // Preview environment for branch-based deployments
+  // Deploy with: wrangler deploy --env preview
+  // Preview URL: searchpath-preview.<subdomain>.workers.dev
+  // For branch-specific previews in CI, use --name flag:
+  // wrangler deploy --env preview --name searchpath-preview-${BRANCH_NAME}
+  "env": {
+    "preview": {
+      "name": "searchpath-preview",
+      "routes": []
+    }
+  }
+}

@@ -1,0 +1,689 @@
+# searchpath
+
+> A Python library for searching ordered directories with pattern matching and provenance tracking. Find files across multiple directories (like config cascades) with full support for glob patterns, gitignore-style exclusions, and tracking where matches came from.
+
+Requirements: Python 3.10+
+Dependencies: typing-extensions (for Python < 3.12)
+Optional: pathspec (for GitignoreMatcher)
+
+Install: `pip install searchpath`
+
+---
+
+# Project overview
+
+searchpath finds files across prioritized directories and tracks where each match comes from. Use it for config cascades (project overrides user overrides system), plugin discovery, or any scenario where files might exist in more than one location and you need to know which one you found.
+
+The key insight: when you need to search multiple directories in priority order, you also need to know *which* directory each result came from. searchpath gives you both.
+
+## Quick example
+
+```python
+import searchpath
+from pathlib import Path
+
+# Find first config file, checking project dir before user dir
+config = searchpath.first("config.toml", project_dir, user_dir)
+
+# Find with provenance (which directory did it come from?)
+match = searchpath.match("*.toml", ("project", project_dir), ("user", user_dir))
+if match:
+    print(f"Found {match.relative} in {match.scope} scope")
+
+# Find all Python files, excluding tests
+files = searchpath.all("**/*.py", src_dir, exclude=["test_*", "*_test.py"])
+```
+
+## Use cases
+
+- **Config cascades**: Project-level config overrides user-level, which overrides system defaults
+- **Plugin discovery**: Find plugins across application, user, and shared directories
+- **Theme loading**: Search custom theme directory first, falling back to defaults
+- **Asset resolution**: Resolve assets from project before falling back to shared resources
+- **Build systems**: Discover source files across multiple roots with flexible patterns
+- **Developer tools**: Linters, formatters, and code generators targeting specific file types
+- **Multi-tenant systems**: Tenant-specific files override defaults
+
+## Design principles
+
+- **Simple cases are one-liners**: `searchpath.first("config.toml", project_dir, user_dir)`
+- **Just use pathlib**: Functions accept `Path | str` and always return `Path`
+- **Lenient by default**: Discovery returns `None` or empty lists when nothing is found
+- **Exceptions for errors**: Pattern syntax errors and missing pattern files raise exceptions
+- **Thread-safe**: Immutable objects, no global state
+
+---
+
+# Core API reference
+
+## Module-level functions
+
+Convenience functions for one-shot searches without creating a SearchPath instance.
+
+### first
+
+```python
+def first(
+    pattern: str = "**",
+    *entries: Entry,
+    kind: Literal["files", "dirs", "both"] = "files",
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> Path | None:
+    """Find the first matching path across directories.
+
+    Args:
+        pattern: Glob pattern for matching paths. Defaults to "**" (all).
+        *entries: Directory entries to search, in priority order.
+        kind: What to match: "files", "dirs", or "both".
+        include: Additional patterns paths must match.
+        include_from: Path(s) to files containing include patterns.
+        include_from_ancestors: Filename to load include patterns from ancestors.
+        exclude: Patterns that reject paths.
+        exclude_from: Path(s) to files containing exclude patterns.
+        exclude_from_ancestors: Filename to load exclude patterns from ancestors.
+        matcher: PathMatcher implementation. Defaults to GlobMatcher.
+        follow_symlinks: Whether to follow symbolic links.
+
+    Returns:
+        The first matching Path, or None if not found.
+
+    Example:
+        config = searchpath.first("config.toml", project_dir, user_dir)
+    """
+```
+
+### match
+
+```python
+def match(
+    pattern: str = "**",
+    *entries: Entry,
+    kind: Literal["files", "dirs", "both"] = "files",
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> Match | None:
+    """Find the first matching path with provenance information.
+
+    Like first(), but returns a Match object containing the path along
+    with the scope name and source directory.
+
+    Returns:
+        The first Match object, or None if not found.
+
+    Example:
+        m = searchpath.match("*.toml", ("project", project_dir))
+        m.scope if m else None  # 'project'
+    """
+```
+
+### all
+
+```python
+def all(
+    pattern: str = "**",
+    *entries: Entry,
+    kind: Literal["files", "dirs", "both"] = "files",
+    dedupe: bool = True,
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> list[Path]:
+    """Find all matching paths across directories.
+
+    By default, deduplicates by relative path, keeping the first
+    occurrence (from higher priority directories).
+
+    Args:
+        dedupe: If True, keep only first occurrence per relative path.
+
+    Returns:
+        List of matching Path objects.
+
+    Example:
+        files = searchpath.all("*.py", ("src", src_dir), ("tests", tests_dir))
+    """
+```
+
+### matches
+
+```python
+def matches(
+    pattern: str = "**",
+    *entries: Entry,
+    kind: Literal["files", "dirs", "both"] = "files",
+    dedupe: bool = True,
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> list[Match]:
+    """Find all matching paths with provenance information.
+
+    Like all(), but returns Match objects containing paths along with
+    scope names and source directories.
+
+    Returns:
+        List of Match objects.
+
+    Example:
+        results = searchpath.matches("*.toml", ("proj", proj_dir))
+        [(m.scope, m.relative) for m in results]
+        # [('proj', PurePosixPath('config.toml'))]
+    """
+```
+
+---
+
+# SearchPath class
+
+The core class representing an ordered list of directories to search.
+
+```python
+@final
+class SearchPath:
+    """An ordered list of directories to search.
+
+    SearchPath represents an ordered sequence of directories that can be
+    searched for files. Each directory is associated with a scope name
+    that identifies where matches came from (e.g., "user", "project").
+
+    Entries can be specified as:
+    - A tuple of (scope_name, path): Explicit scope naming
+    - A bare Path or str: Auto-named as "dir0", "dir1", etc.
+    - None: Silently ignored (useful for optional directories)
+
+    Attributes:
+        dirs: List of directories in the search path.
+        scopes: List of scope names corresponding to each directory.
+
+    Example:
+        sp = SearchPath(
+            ("project", Path("/project/.config")),
+            ("user", Path.home() / ".config"),
+        )
+        len(sp)  # 2
+    """
+```
+
+## Methods
+
+### __init__
+
+```python
+def __init__(
+    self,
+    *entries: tuple[str, Path | str | None] | Path | str | None,
+) -> None:
+    """Initialize a SearchPath with the given entries.
+
+    Args:
+        *entries: Directory entries to include in the search path.
+    """
+```
+
+### first
+
+```python
+def first(
+    self,
+    pattern: str = "**",
+    *,
+    kind: Literal["files", "dirs", "both"] = "files",
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> Path | None:
+    """Find the first matching path in the search path.
+
+    Returns:
+        The first matching Path, or None if not found.
+    """
+```
+
+### match
+
+```python
+def match(
+    self,
+    pattern: str = "**",
+    *,
+    kind: Literal["files", "dirs", "both"] = "files",
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> Match | None:
+    """Find the first matching path with provenance information.
+
+    Returns:
+        The first Match object, or None if not found.
+    """
+```
+
+### all
+
+```python
+def all(
+    self,
+    pattern: str = "**",
+    *,
+    kind: Literal["files", "dirs", "both"] = "files",
+    dedupe: bool = True,
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> list[Path]:
+    """Find all matching paths in the search path.
+
+    Args:
+        dedupe: If True, keep only first occurrence per relative path.
+
+    Returns:
+        List of matching Path objects.
+    """
+```
+
+### matches
+
+```python
+def matches(
+    self,
+    pattern: str = "**",
+    *,
+    kind: Literal["files", "dirs", "both"] = "files",
+    dedupe: bool = True,
+    include: str | Sequence[str] | None = None,
+    include_from: Path | str | Sequence[Path | str] | None = None,
+    include_from_ancestors: str | None = None,
+    exclude: str | Sequence[str] | None = None,
+    exclude_from: Path | str | Sequence[Path | str] | None = None,
+    exclude_from_ancestors: str | None = None,
+    matcher: PathMatcher | None = None,
+    follow_symlinks: bool = True,
+) -> list[Match]:
+    """Find all matching paths with provenance information.
+
+    Returns:
+        List of Match objects.
+    """
+```
+
+### with_suffix
+
+```python
+def with_suffix(self, *parts: str) -> Self:
+    """Create a new SearchPath with path components appended.
+
+    Example:
+        sp = SearchPath(("user", Path("/home/user")))
+        sp2 = sp.with_suffix(".config", "myapp")
+        list(sp2)  # [PosixPath('/home/user/.config/myapp')]
+    """
+```
+
+### filter
+
+```python
+def filter(self, predicate: Callable[[Path], bool]) -> Self:
+    """Create a new SearchPath with entries filtered by a predicate.
+
+    Example:
+        filtered = sp.filter(lambda p: p.exists())
+    """
+```
+
+### existing
+
+```python
+def existing(self) -> Self:
+    """Create a new SearchPath with only existing directories.
+
+    Shorthand for `filter(lambda p: p.exists())`.
+    """
+```
+
+### items
+
+```python
+def items(self) -> Iterator[tuple[str, Path]]:
+    """Iterate over (scope, path) pairs in the search path."""
+```
+
+## Properties
+
+- `dirs: list[Path]` - List of directories in the search path
+- `scopes: list[str]` - List of scope names in the search path
+
+## Operators
+
+- `sp1 + sp2` - Concatenate two search paths
+- `len(sp)` - Number of directories
+- `bool(sp)` - True if has any directories
+- `iter(sp)` - Iterate over directory paths
+
+---
+
+# Match class
+
+Result object containing a matched path with provenance information.
+
+```python
+@dataclass(frozen=True, slots=True)
+class Match:
+    """Result of a search path lookup.
+
+    Attributes:
+        path: Absolute path to the matched file or directory.
+        scope: Scope name of the search path entry (e.g., "user", "project").
+        source: The search path directory this match came from.
+
+    Example:
+        match = Match(
+            path=Path("/home/user/.config/myapp/config.toml"),
+            scope="user",
+            source=Path("/home/user/.config/myapp"),
+        )
+        match.relative  # PosixPath('config.toml')
+    """
+
+    path: Path
+    scope: str
+    source: Path
+
+    @property
+    def relative(self) -> Path:
+        """Path relative to the source directory."""
+```
+
+---
+
+# Entry type
+
+Type alias for SearchPath entry arguments.
+
+```python
+Entry: TypeAlias = "tuple[str, Path | str | None] | Path | str | None"
+```
+
+Entries can be:
+- `(scope_name, path)` - Explicit scope naming
+- `Path` or `str` - Auto-named as "dir0", "dir1", etc.
+- `None` - Silently ignored (useful for optional directories)
+
+---
+
+# Pattern matchers
+
+## PathMatcher protocol
+
+```python
+class PathMatcher(Protocol):
+    """Protocol for pattern matching implementations.
+
+    Path matchers check if paths match include/exclude pattern lists.
+    """
+
+    @property
+    def supports_negation(self) -> bool:
+        """Whether this matcher supports negation patterns (!pattern)."""
+
+    @property
+    def supports_dir_only(self) -> bool:
+        """Whether this matcher supports directory-only patterns (pattern/)."""
+
+    def matches(
+        self,
+        path: str,
+        *,
+        is_dir: bool = False,
+        include: Sequence[str] = (),
+        exclude: Sequence[str] = (),
+    ) -> bool:
+        """Check if path matches the include/exclude patterns.
+
+        A path matches if:
+        - It matches at least one include pattern (or include is empty), AND
+        - It does not match any exclude pattern
+        """
+```
+
+## GlobMatcher
+
+Default pattern matcher using glob-style patterns.
+
+```python
+@final
+class GlobMatcher:
+    """Path matcher using glob-style patterns.
+
+    Supports:
+        - `*`: Matches any characters except `/`
+        - `**`: Matches any characters including `/` (when complete component)
+        - `?`: Matches any single character except `/`
+        - `[abc]`: Matches any character in the set
+        - `[!abc]` or `[^abc]`: Matches any character not in the set
+        - `[a-z]`: Matches any character in the range
+
+    Does not support:
+        - Negation patterns (`!pattern`)
+        - Directory-only patterns (`pattern/`)
+        - Anchored patterns (`/pattern`)
+
+    Example:
+        matcher = GlobMatcher()
+        matcher.matches("src/main.py", include=["**/*.py"])  # True
+    """
+```
+
+## RegexMatcher
+
+Pattern matcher using Python regular expressions.
+
+```python
+@final
+class RegexMatcher:
+    r"""Path matcher using Python regular expressions.
+
+    Uses the re module for full regex syntax. Patterns are matched against
+    the entire path using fullmatch().
+
+    Example:
+        matcher = RegexMatcher()
+        matcher.matches("src/main.py", include=[r".*\.py"])  # True
+    """
+```
+
+## GitignoreMatcher
+
+Pattern matcher using gitignore-style patterns via pathspec library.
+
+```python
+@final
+class GitignoreMatcher:
+    """Path matcher using gitignore-style patterns via pathspec library.
+
+    Provides full gitignore compatibility including:
+        - `*`: Matches any characters except `/`
+        - `**`: Recursive directory matching
+        - `?`: Matches any single character except `/`
+        - `[abc]`: Character classes
+        - `!pattern`: Negation (un-ignores previously matched paths)
+        - `pattern/`: Directory-only patterns
+        - `/pattern`: Anchored patterns (match from root only)
+
+    Requires the optional `pathspec` package. Install with:
+        pip install searchpath[gitignore]
+
+    Example:
+        matcher = GitignoreMatcher()
+        matcher.matches("src/main.py", include=["*.py"])  # True
+    """
+```
+
+---
+
+# Exceptions
+
+```python
+class SearchPathError(Exception):
+    """Base exception for all searchpath errors."""
+
+class PatternError(SearchPathError):
+    """Base exception for pattern-related errors."""
+
+class PatternSyntaxError(PatternError):
+    """Raised when a pattern has invalid syntax.
+
+    Attributes:
+        pattern: The invalid pattern string.
+        message: Description of the syntax error.
+        position: Optional character position of the error.
+    """
+
+class PatternFileError(PatternError):
+    """Raised when a pattern file cannot be read.
+
+    Attributes:
+        path: The path to the unreadable file.
+        message: Description of the error.
+    """
+
+class ConfigurationError(SearchPathError):
+    """Raised for invalid SearchPath configuration."""
+```
+
+---
+
+# Common patterns
+
+## Config cascade
+
+```python
+# Project overrides user overrides system
+config = searchpath.first(
+    "config.toml",
+    ("project", project_dir),
+    ("user", Path.home() / ".config" / "myapp"),
+    ("system", Path("/etc/myapp")),
+)
+```
+
+## Plugin discovery with deduplication
+
+```python
+# User plugins override built-in plugins with same name
+plugins = searchpath.all(
+    "*.py",
+    ("user", user_plugins_dir),
+    ("builtin", builtin_plugins_dir),
+    dedupe=True,  # Keep first occurrence of each filename
+)
+```
+
+## Filtering with include/exclude
+
+```python
+# Find Python files, excluding tests and cache
+sources = searchpath.all(
+    "**/*.py",
+    src_dir,
+    exclude=["test_*", "*_test.py", "__pycache__/**"],
+)
+```
+
+## Optional directories
+
+```python
+# Handle optional directories gracefully
+sp = SearchPath(
+    ("project", project_config if project_config.exists() else None),
+    ("user", user_config),
+)
+
+# Or use existing() to filter
+sp = SearchPath(
+    ("project", project_config),
+    ("user", user_config),
+).existing()
+```
+
+## Provenance tracking
+
+```python
+# Know where each file came from
+for match in searchpath.matches("*.yaml", ("a", dir_a), ("b", dir_b)):
+    print(f"Found {match.relative} in {match.scope} ({match.source})")
+```
+
+---
+
+# Glossary
+
+**Config cascade**: A pattern where configuration files are loaded from multiple directories in priority order. Higher-priority directories override lower-priority ones.
+
+**Deduplication**: Removing duplicate matches based on relative path. Keeps the first occurrence, allowing higher-priority directories to override.
+
+**Entry**: A specification for a directory in a SearchPath. Can be a (scope, path) tuple, bare path, or None.
+
+**Exclude pattern**: A pattern that rejects matching paths from results.
+
+**Glob pattern**: A pattern using wildcards (*, **, ?, [abc]) to match file paths.
+
+**Include pattern**: A pattern that paths must match to be included in results.
+
+**Match**: A result object with path, scope, source, and relative path.
+
+**PathMatcher**: Protocol for pattern matching implementations.
+
+**Provenance**: Information about where a match came from (scope and source).
+
+**Scope**: A string name identifying a directory in a SearchPath.
+
+**SearchPath**: An ordered list of directories to search.
+
+**Source**: The directory that a match came from.
+
+---
+
+# Repository
+
+- **Source**: <https://github.com/tbhb/searchpath>
+- **Documentation**: <https://searchpath.tbhb.dev/>
+- **PyPI**: <https://pypi.org/project/searchpath/>
+- **License**: MIT

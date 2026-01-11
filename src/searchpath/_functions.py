@@ -46,8 +46,17 @@ def first(  # noqa: PLR0913
         The first matching Path, or None if not found.
 
     Example:
-        >>> import searchpath
-        >>> config = searchpath.first("config.toml", project_dir, user_dir)
+        ```python
+        import tempfile
+        from pathlib import Path
+        import searchpath
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp).resolve()
+            (d / "config.toml").touch()
+            config = searchpath.first("config.toml", d)
+            config is not None  # True
+        ```
     """
     return SearchPath(*entries).first(
         pattern,
@@ -97,10 +106,17 @@ def match(  # noqa: PLR0913
         The first Match object, or None if not found.
 
     Example:
-        >>> import searchpath
-        >>> m = searchpath.match("*.toml", ("project", project_dir))
-        >>> m.scope if m else None
-        'project'
+        ```python
+        import tempfile
+        from pathlib import Path
+        import searchpath
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp).resolve()
+            (d / "config.toml").touch()
+            m = searchpath.match("*.toml", ("project", d))
+            m.scope if m else None  # 'project'
+        ```
     """
     return SearchPath(*entries).match(
         pattern,
@@ -152,8 +168,18 @@ def all(  # noqa: A001, PLR0913
         List of matching Path objects.
 
     Example:
-        >>> import searchpath
-        >>> files = searchpath.all("*.py", ("src", src_dir), ("tests", tests_dir))
+        ```python
+        import tempfile
+        from pathlib import Path
+        import searchpath
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp).resolve()
+            (d / "main.py").touch()
+            (d / "test_main.py").touch()
+            files = searchpath.all("*.py", d)
+            len(files) >= 2  # True
+        ```
     """
     return SearchPath(*entries).all(
         pattern,
@@ -206,10 +232,17 @@ def matches(  # noqa: PLR0913
         List of Match objects.
 
     Example:
-        >>> import searchpath
-        >>> results = searchpath.matches("*.toml", ("proj", proj_dir))
-        >>> [(m.scope, m.relative) for m in results]
-        [('proj', PurePosixPath('config.toml'))]
+        ```python
+        import tempfile
+        from pathlib import Path
+        import searchpath
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp).resolve()
+            (d / "config.toml").touch()
+            results = searchpath.matches("*.toml", ("proj", d))
+            len(results) >= 1 and results[0].scope == "proj"  # True
+        ```
     """
     return SearchPath(*entries).matches(
         pattern,
