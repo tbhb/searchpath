@@ -1,11 +1,16 @@
 """SearchPath class for ordered directory searching."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias, final
+from typing import TYPE_CHECKING, Literal, TypeAlias, final
+
+from searchpath._match import Match
+from searchpath._traversal import TraversalKind, load_patterns, traverse
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from typing_extensions import Self
+
+    from searchpath._matchers import PathMatcher  # isort: skip
 
 from typing_extensions import override
 
@@ -274,3 +279,369 @@ class SearchPath:
             [('user', PosixPath('/user')), ('system', PosixPath('/sys'))]
         """
         yield from self._entries
+
+    @staticmethod
+    def _normalize_pattern_arg(
+        patterns: "str | Sequence[str] | None",
+    ) -> "Sequence[str]":
+        """Normalize pattern argument to a sequence of strings.
+
+        Args:
+            patterns: A single pattern string, sequence of patterns, or None.
+
+        Returns:
+            A sequence of pattern strings (empty if None).
+        """
+        if patterns is None:
+            return ()
+        if isinstance(patterns, str):
+            return (patterns,)
+        return patterns
+
+    @staticmethod
+    def _normalize_path_arg(
+        paths: "Path | str | Sequence[Path | str] | None",
+    ) -> "Sequence[Path]":
+        """Normalize path argument to a sequence of Paths.
+
+        Args:
+            paths: A single path, sequence of paths, or None.
+
+        Returns:
+            A sequence of Path objects (empty if None).
+        """
+        if paths is None:
+            return ()
+        if isinstance(paths, (str, Path)):
+            return (Path(paths),)
+        return tuple(Path(p) for p in paths)
+
+    @staticmethod
+    def _load_pattern_files(paths: "Sequence[Path]") -> list[str]:
+        """Load patterns from multiple pattern files.
+
+        Args:
+            paths: Sequence of paths to pattern files.
+
+        Returns:
+            Combined list of patterns from all files.
+
+        Raises:
+            PatternFileError: If any file cannot be read.
+        """
+        patterns: list[str] = []
+        for path in paths:
+            patterns.extend(load_patterns(path))
+        return patterns
+
+    def _build_patterns(
+        self,
+        include: "str | Sequence[str] | None",
+        include_from: "Path | str | Sequence[Path | str] | None",
+        exclude: "str | Sequence[str] | None",
+        exclude_from: "Path | str | Sequence[Path | str] | None",
+    ) -> tuple[list[str], list[str]]:
+        """Build effective include and exclude pattern lists from all sources.
+
+        Args:
+            include: Inline include patterns.
+            include_from: Path(s) to load additional include patterns from.
+            exclude: Inline exclude patterns.
+            exclude_from: Path(s) to load additional exclude patterns from.
+
+        Returns:
+            Tuple of (include_patterns, exclude_patterns).
+
+        Raises:
+            PatternFileError: If any pattern file cannot be read.
+        """
+        include_patterns = list(self._normalize_pattern_arg(include))
+        include_paths = self._normalize_path_arg(include_from)
+        if include_paths:
+            include_patterns.extend(self._load_pattern_files(include_paths))
+
+        exclude_patterns = list(self._normalize_pattern_arg(exclude))
+        exclude_paths = self._normalize_path_arg(exclude_from)
+        if exclude_paths:
+            exclude_patterns.extend(self._load_pattern_files(exclude_paths))
+
+        return (include_patterns, exclude_patterns)
+
+    @staticmethod
+    def _dedupe_matches(matches: "Iterable[Match]") -> "Iterator[Match]":
+        """Deduplicate matches by relative path, keeping first occurrence.
+
+        Args:
+            matches: Iterable of Match objects.
+
+        Yields:
+            Match objects with unique relative paths.
+        """
+        seen: set[str] = set()
+        for match in matches:
+            key = match.relative.as_posix()
+            if key not in seen:
+                seen.add(key)
+                yield match
+
+    def _iter_matches(  # noqa: PLR0913
+        self,
+        pattern: str,
+        *,
+        kind: TraversalKind,
+        include: "Sequence[str]",
+        exclude: "Sequence[str]",
+        matcher: "PathMatcher | None",
+        follow_symlinks: bool,
+    ) -> "Iterator[Match]":
+        """Core iteration logic yielding Match objects for all matching paths.
+
+        Args:
+            pattern: Glob pattern for matching paths.
+            kind: What to yield: "files", "dirs", or "both".
+            include: Additional patterns paths must match.
+            exclude: Patterns that reject paths.
+            matcher: PathMatcher implementation.
+            follow_symlinks: Whether to follow symbolic links.
+
+        Yields:
+            Match objects for all matching paths across all entries.
+        """
+        for scope, source in self._entries:
+            for path in traverse(
+                source,
+                pattern=pattern,
+                kind=kind,
+                include=include,
+                exclude=exclude,
+                matcher=matcher,
+                follow_symlinks=follow_symlinks,
+            ):
+                yield Match(path=path, scope=scope, source=source)
+
+    def first(  # noqa: PLR0913
+        self,
+        pattern: str = "**",
+        *,
+        kind: Literal["files", "dirs", "both"] = "files",
+        include: "str | Sequence[str] | None" = None,
+        include_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude: "str | Sequence[str] | None" = None,
+        exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        matcher: "PathMatcher | None" = None,
+        follow_symlinks: bool = True,
+    ) -> Path | None:
+        """Find the first matching path in the search path.
+
+        Searches directories in order and returns the first path that matches
+        the pattern and filter criteria. Returns None if no match is found.
+
+        Args:
+            pattern: Glob pattern for matching paths. Defaults to "**" (all).
+            kind: What to match: "files", "dirs", or "both".
+            include: Additional patterns paths must match.
+            include_from: Path(s) to files containing include patterns.
+            exclude: Patterns that reject paths.
+            exclude_from: Path(s) to files containing exclude patterns.
+            matcher: PathMatcher implementation. Defaults to GlobMatcher.
+            follow_symlinks: Whether to follow symbolic links.
+
+        Returns:
+            The first matching Path, or None if not found.
+
+        Example:
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> with tempfile.TemporaryDirectory() as tmp:
+            ...     d = Path(tmp)
+            ...     (d / "config.toml").touch()
+            ...     sp = SearchPath(("dir", d))
+            ...     result = sp.first("*.toml")
+            ...     result is not None
+            True
+        """
+        result = self.match(
+            pattern,
+            kind=kind,
+            include=include,
+            include_from=include_from,
+            exclude=exclude,
+            exclude_from=exclude_from,
+            matcher=matcher,
+            follow_symlinks=follow_symlinks,
+        )
+        return result.path if result is not None else None
+
+    def match(  # noqa: PLR0913
+        self,
+        pattern: str = "**",
+        *,
+        kind: Literal["files", "dirs", "both"] = "files",
+        include: "str | Sequence[str] | None" = None,
+        include_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude: "str | Sequence[str] | None" = None,
+        exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        matcher: "PathMatcher | None" = None,
+        follow_symlinks: bool = True,
+    ) -> Match | None:
+        """Find the first matching path with provenance information.
+
+        Like first(), but returns a Match object containing the path along
+        with the scope name and source directory. Returns None if no match.
+
+        Args:
+            pattern: Glob pattern for matching paths. Defaults to "**" (all).
+            kind: What to match: "files", "dirs", or "both".
+            include: Additional patterns paths must match.
+            include_from: Path(s) to files containing include patterns.
+            exclude: Patterns that reject paths.
+            exclude_from: Path(s) to files containing exclude patterns.
+            matcher: PathMatcher implementation. Defaults to GlobMatcher.
+            follow_symlinks: Whether to follow symbolic links.
+
+        Returns:
+            The first Match object, or None if not found.
+
+        Example:
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> with tempfile.TemporaryDirectory() as tmp:
+            ...     d = Path(tmp)
+            ...     (d / "config.toml").touch()
+            ...     sp = SearchPath(("project", d))
+            ...     m = sp.match("*.toml")
+            ...     m is not None and m.scope == "project"
+            True
+        """
+        include_patterns, exclude_patterns = self._build_patterns(
+            include, include_from, exclude, exclude_from
+        )
+
+        for m in self._iter_matches(
+            pattern,
+            kind=kind,
+            include=include_patterns,
+            exclude=exclude_patterns,
+            matcher=matcher,
+            follow_symlinks=follow_symlinks,
+        ):
+            return m
+
+        return None
+
+    def all(  # noqa: PLR0913
+        self,
+        pattern: str = "**",
+        *,
+        kind: Literal["files", "dirs", "both"] = "files",
+        dedupe: bool = True,
+        include: "str | Sequence[str] | None" = None,
+        include_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude: "str | Sequence[str] | None" = None,
+        exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        matcher: "PathMatcher | None" = None,
+        follow_symlinks: bool = True,
+    ) -> list[Path]:
+        """Find all matching paths in the search path.
+
+        Searches all directories and returns paths matching the pattern and
+        filter criteria. By default, deduplicates by relative path, keeping
+        the first occurrence (from higher priority directories).
+
+        Args:
+            pattern: Glob pattern for matching paths. Defaults to "**" (all).
+            kind: What to match: "files", "dirs", or "both".
+            dedupe: If True, keep only first occurrence per relative path.
+            include: Additional patterns paths must match.
+            include_from: Path(s) to files containing include patterns.
+            exclude: Patterns that reject paths.
+            exclude_from: Path(s) to files containing exclude patterns.
+            matcher: PathMatcher implementation. Defaults to GlobMatcher.
+            follow_symlinks: Whether to follow symbolic links.
+
+        Returns:
+            List of matching Path objects.
+
+        Example:
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> with tempfile.TemporaryDirectory() as tmp:
+            ...     d = Path(tmp)
+            ...     (d / "a.py").touch()
+            ...     (d / "b.py").touch()
+            ...     sp = SearchPath(("dir", d))
+            ...     len(sp.all("*.py")) >= 2
+            True
+        """
+        match_list = self.matches(
+            pattern,
+            kind=kind,
+            dedupe=dedupe,
+            include=include,
+            include_from=include_from,
+            exclude=exclude,
+            exclude_from=exclude_from,
+            matcher=matcher,
+            follow_symlinks=follow_symlinks,
+        )
+        return [m.path for m in match_list]
+
+    def matches(  # noqa: PLR0913
+        self,
+        pattern: str = "**",
+        *,
+        kind: Literal["files", "dirs", "both"] = "files",
+        dedupe: bool = True,
+        include: "str | Sequence[str] | None" = None,
+        include_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude: "str | Sequence[str] | None" = None,
+        exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        matcher: "PathMatcher | None" = None,
+        follow_symlinks: bool = True,
+    ) -> list[Match]:
+        """Find all matching paths with provenance information.
+
+        Like all(), but returns Match objects containing paths along with
+        scope names and source directories.
+
+        Args:
+            pattern: Glob pattern for matching paths. Defaults to "**" (all).
+            kind: What to match: "files", "dirs", or "both".
+            dedupe: If True, keep only first occurrence per relative path.
+            include: Additional patterns paths must match.
+            include_from: Path(s) to files containing include patterns.
+            exclude: Patterns that reject paths.
+            exclude_from: Path(s) to files containing exclude patterns.
+            matcher: PathMatcher implementation. Defaults to GlobMatcher.
+            follow_symlinks: Whether to follow symbolic links.
+
+        Returns:
+            List of Match objects.
+
+        Example:
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> with tempfile.TemporaryDirectory() as tmp:
+            ...     d = Path(tmp)
+            ...     (d / "config.toml").touch()
+            ...     sp = SearchPath(("project", d))
+            ...     matches = sp.matches("*.toml")
+            ...     len(matches) >= 1 and matches[0].scope == "project"
+            True
+        """
+        include_patterns, exclude_patterns = self._build_patterns(
+            include, include_from, exclude, exclude_from
+        )
+
+        all_matches = self._iter_matches(
+            pattern,
+            kind=kind,
+            include=include_patterns,
+            exclude=exclude_patterns,
+            matcher=matcher,
+            follow_symlinks=follow_symlinks,
+        )
+
+        if dedupe:
+            return list(self._dedupe_matches(all_matches))
+        return list(all_matches)
