@@ -18,7 +18,7 @@ searchpath finds files across prioritized directories and tracks where each matc
 
 - **Search across directories with priority**: Find files in config cascades, plugin directories, or any ordered set of paths
 - **Track where matches come from**: Every match includes provenance, telling you exactly which directory contains the file
-- **Filter with powerful patterns**: Use glob patterns (default), full regex, or gitignore-style rules with negation (using [pathspec][pathspec])
+- **Filter with patterns**: Use glob patterns (default), full regex, or gitignore-style rules with negation (using [pathspec][pathspec])
 - **Load patterns from files**: Support hierarchical pattern files that cascade like `.gitignore`
 - **Simple one-liners for common cases**: `searchpath.first("config.toml", project_dir, user_dir)`
 - **Minimal footprint**: Only requires `typing-extensions` on Python < 3.12; `pathspec` optional for gitignore support
