@@ -1,0 +1,223 @@
+---
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Build distribution packages and generate SBOM
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: "${{ steps.version.outputs.version }}"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+
+      - name: Add dev version if not a PyPi build
+        if: "github.event_name == 'push' || (github.event_name == 'release' && github.event.action != 'published')"
+        run: |
+          just set-dev-version ${{ github.run_number}}
+
+      - name: Capture version
+        id: version
+        run: |
+          echo "version=$(just version)" >> "$GITHUB_OUTPUT"
+
+      - name: Build package with SBOM
+        run: just build-release
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # Test built package installs correctly
+  test:
+    name: "Test package (${{ matrix.os }}, Python ${{ matrix.python-version }})"
+    needs: build
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.14t"]
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false # No checkout, so no dependency files to hash
+
+      - name: Install from wheel
+        shell: bash
+        run: |
+          uv venv
+          uv pip install dist/*.whl
+
+      - name: Smoke test
+        run: |
+          uv run python -c "import searchpath; print(f'Version: {searchpath.__version__}')"
+
+  # Publish to TestPyPI (triggered by tag push or draft release/unpublished release edit)
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs:
+      - build
+      - test
+    if: "github.event_name == 'push' || (github.event_name == 'release' && github.event.action != 'published')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/searchpath
+
+    permissions:
+      id-token: write # Trusted Publishing OIDC
+      attestations: write # Artifact attestations
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Download distributions
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Generate build attestation
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.whl"
+
+      - name: Generate SBOM attestation
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.whl"
+          sbom-path: dist/sbom.cdx.json
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+        with:
+          python-version: "3.10"
+
+      - name: Install just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+
+      - name: Publish to TestPyPI
+        run: just publish-testpypi
+
+      - name: Verify TestPyPI release
+        run: just verify-testpypi ${{ needs.build.outputs.version }}
+
+  # Publish to PyPI (triggered by publishing the GitHub Release)
+  publish-pypi:
+    name: Publish to PyPI
+    needs:
+      - build
+      - test
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/searchpath
+
+    permissions:
+      id-token: write # Trusted Publishing OIDC
+      attestations: write # Artifact attestations
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Download distributions
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Generate build attestation
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.whl"
+
+      - name: Generate SBOM attestation
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.whl"
+          sbom-path: dist/sbom.cdx.json
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+        with:
+          python-version: "3.10"
+
+      - name: Install just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+
+      - name: Publish to PyPI
+        run: just publish-pypi
+
+      - name: Verify PyPI release
+        run: just verify-pypi ${{ needs.build.outputs.version }}
+
+  # Attach distribution files to the GitHub Release
+  upload-release-assets:
+    name: Upload release assets
+    needs:
+      - build
+      - test
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write # Required to upload release assets
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" dist/* --repo "${{ github.repository }}"

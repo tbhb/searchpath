@@ -1,0 +1,26 @@
+{
+  "functions": [
+    {
+      "complexity": 0,
+      "file_name": "test_bench_imports.py",
+      "function_name": "TestBenchImportTime::test_import_time_searchpath",
+      "path": "tests/benchmarks/test_bench_imports.py"
+    },
+    {
+      "complexity": 9,
+      "file_name": "conftest.py",
+      "function_name": "pytest_collection_modifyitems",
+      "path": "tests/conftest.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "test_version.py",
+      "function_name": "test_version",
+      "path": "tests/unit/test_version.py"
+    }
+  ],
+  "targets": [
+    "/Users/tony/Code/github.com/tbhb/searchpath/src",
+    "/Users/tony/Code/github.com/tbhb/searchpath/tests"
+  ]
+}

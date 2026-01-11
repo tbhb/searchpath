@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "searchpath"
+abstract: "A Python library for filesystem path discovery and pattern matching."
+authors:
+  - family-names: Burns
+    given-names: Tony
+    orcid: "https://orcid.org/0009-0006-4480-2939"
+repository-code: "https://github.com/tbhb/searchpath"
+url: "https://searchpath.tbhb.dev"
+license: MIT
+version: "0.0.0"
+date-released: "2026-01-11"
+keywords: []
