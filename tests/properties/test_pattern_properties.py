@@ -1,11 +1,37 @@
 import contextlib
-import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hypothesis import given, settings, strategies as st
+from pyfakefs.fake_filesystem_unittest import Patcher
 
 from searchpath import GlobMatcher, PatternSyntaxError
 from searchpath._traversal import traverse
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextmanager
+def fake_test_tree(num_files: int = 0, num_dirs: int = 0) -> "Iterator[Path]":
+    """Create an isolated fake filesystem with the specified files and directories.
+
+    For use with Hypothesis property tests where pytest fixtures don't work.
+    """
+    with Patcher() as patcher:
+        assert patcher.fs is not None
+        root = Path("/test_root")
+        _ = patcher.fs.create_dir(str(root))
+
+        for i in range(num_dirs):
+            _ = patcher.fs.create_dir(str(root / f"dir{i}"))
+
+        for i in range(num_files):
+            _ = patcher.fs.create_file(str(root / f"file{i}.txt"))
+
+        yield root
+
 
 # Strategy for generating valid path component characters (no path separators)
 path_component_chars: st.SearchStrategy[str] = st.text(
@@ -95,16 +121,8 @@ class TestTraverseKindProperties:
     def test_traverse_files_never_yields_directories(
         self, num_files: int, num_dirs: int
     ):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-
-            for i in range(num_dirs):
-                (tmp_path / f"dir{i}").mkdir(exist_ok=True)
-
-            for i in range(num_files):
-                (tmp_path / f"file{i}.txt").touch()
-
-            result = list(traverse(tmp_path, kind="files"))
+        with fake_test_tree(num_files=num_files, num_dirs=num_dirs) as root:
+            result = list(traverse(root, kind="files"))
 
             for path in result:
                 assert path.is_file()
@@ -115,29 +133,16 @@ class TestTraverseKindProperties:
     )
     @settings(max_examples=20)
     def test_traverse_dirs_never_yields_files(self, num_files: int, num_dirs: int):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-
-            for i in range(num_dirs):
-                (tmp_path / f"dir{i}").mkdir(exist_ok=True)
-
-            for i in range(num_files):
-                (tmp_path / f"file{i}.txt").touch()
-
-            result = list(traverse(tmp_path, kind="dirs"))
+        with fake_test_tree(num_files=num_files, num_dirs=num_dirs) as root:
+            result = list(traverse(root, kind="dirs"))
 
             for path in result:
                 assert path.is_dir()
 
     def test_traverse_both_yields_files_and_dirs(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-
-            # Create at least one file and one directory
-            (tmp_path / "testdir").mkdir(exist_ok=True)
-            (tmp_path / "testfile.txt").touch()
-
-            result = list(traverse(tmp_path, kind="both"))
+        # Create at least one file and one directory
+        with fake_test_tree(num_files=1, num_dirs=1) as root:
+            result = list(traverse(root, kind="both"))
 
             has_file = any(p.is_file() for p in result)
             has_dir = any(p.is_dir() for p in result)
@@ -148,13 +153,8 @@ class TestTraverseKindProperties:
     @given(num_files=st.integers(min_value=1, max_value=5))
     @settings(max_examples=20)
     def test_traverse_yields_absolute_paths(self, num_files: int):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-
-            for i in range(num_files):
-                (tmp_path / f"file{i}.txt").touch()
-
-            result = list(traverse(tmp_path))
+        with fake_test_tree(num_files=num_files) as root:
+            result = list(traverse(root))
 
             for path in result:
                 assert path.is_absolute()
@@ -162,13 +162,8 @@ class TestTraverseKindProperties:
     @given(num_files=st.integers(min_value=0, max_value=5))
     @settings(max_examples=10)
     def test_traverse_result_is_deterministic(self, num_files: int):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-
-            for i in range(num_files):
-                (tmp_path / f"file{i}.txt").touch()
-
-            result1 = sorted(traverse(tmp_path))
-            result2 = sorted(traverse(tmp_path))
+        with fake_test_tree(num_files=num_files) as root:
+            result1 = sorted(traverse(root))
+            result2 = sorted(traverse(root))
 
             assert result1 == result2

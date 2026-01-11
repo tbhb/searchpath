@@ -1,29 +1,28 @@
-"""Integration tests for SearchPath lookup methods."""
-
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
 from searchpath import GlobMatcher, Match, PatternFileError, SearchPath
 
+from tests.conftest import Symlink
+
 if TYPE_CHECKING:
-    from pathlib import Path
+    from conftest import TreeFactory
 
 
 class TestFirst:
-    def test_finds_first_matching_file(self, tmp_path: "Path"):
-        (tmp_path / "config.toml").touch()
-        (tmp_path / "other.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_finds_first_matching_file(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"config.toml": "", "other.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.first("*.toml")
 
-        assert result == tmp_path / "config.toml"
+        assert result == root / "config.toml"
 
-    def test_returns_none_when_not_found(self, tmp_path: "Path"):
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_returns_none_when_not_found(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"readme.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.first("*.py")
 
@@ -36,13 +35,15 @@ class TestFirst:
 
         assert result is None
 
-    def test_respects_search_order(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        _ = (dir1 / "config.toml").write_text("from dir1", encoding="utf-8")
-        _ = (dir2 / "config.toml").write_text("from dir2", encoding="utf-8")
+    def test_respects_search_order(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"config.toml": "from dir1"},
+                "dir2": {"config.toml": "from dir2"},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.first("config.toml")
@@ -50,44 +51,42 @@ class TestFirst:
         assert result is not None
         assert result == dir1 / "config.toml"
 
-    def test_skips_nonexistent_directories(self, tmp_path: "Path"):
-        existing = tmp_path / "existing"
-        missing = tmp_path / "missing"
-        existing.mkdir()
-        (existing / "config.toml").touch()
+    def test_skips_nonexistent_directories(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"existing": {"config.toml": ""}})
+        existing = root / "existing"
+        missing = root / "missing"
 
         sp = SearchPath(("missing", missing), ("existing", existing))
         result = sp.first("*.toml")
 
         assert result == existing / "config.toml"
 
-    def test_with_exclude_patterns(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_with_exclude_patterns(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"main.py": "", "test_main.py": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.first("*.py", exclude=["test_*"])
 
-        assert result == tmp_path / "main.py"
+        assert result == root / "main.py"
 
 
 class TestMatch:
-    def test_returns_match_with_correct_metadata(self, tmp_path: "Path"):
-        (tmp_path / "config.toml").touch()
-        sp = SearchPath(("project", tmp_path))
+    def test_returns_match_with_correct_metadata(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"config.toml": ""})
+        sp = SearchPath(("project", root))
 
         result = sp.match("*.toml")
 
         assert result is not None
         assert isinstance(result, Match)
         assert result.scope == "project"
-        assert result.source == tmp_path
-        assert result.path == tmp_path / "config.toml"
+        assert result.source == root
+        assert result.path == root / "config.toml"
         assert result.relative.as_posix() == "config.toml"
 
-    def test_returns_none_when_not_found(self, tmp_path: "Path"):
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_returns_none_when_not_found(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"readme.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.match("*.py")
 
@@ -100,23 +99,24 @@ class TestMatch:
 
         assert result is None
 
-    def test_nested_file_relative_path(self, tmp_path: "Path"):
-        subdir = tmp_path / "src" / "utils"
-        subdir.mkdir(parents=True)
-        (subdir / "helpers.py").touch()
-        sp = SearchPath(("project", tmp_path))
+    def test_nested_file_relative_path(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"src": {"utils": {"helpers.py": ""}}})
+        sp = SearchPath(("project", root))
 
         result = sp.match("**/*.py")
 
         assert result is not None
         assert result.relative.as_posix() == "src/utils/helpers.py"
 
-    def test_provenance_tracks_correct_source(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir2 / "config.toml").touch()
+    def test_provenance_tracks_correct_source(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {},
+                "dir2": {"config.toml": ""},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.match("*.toml")
@@ -127,19 +127,17 @@ class TestMatch:
 
 
 class TestAll:
-    def test_finds_all_matching_files(self, tmp_path: "Path"):
-        (tmp_path / "a.py").touch()
-        (tmp_path / "b.py").touch()
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_finds_all_matching_files(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"a.py": "", "b.py": "", "readme.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sorted(sp.all("*.py"))
 
-        assert result == sorted([tmp_path / "a.py", tmp_path / "b.py"])
+        assert result == sorted([root / "a.py", root / "b.py"])
 
-    def test_returns_empty_list_when_not_found(self, tmp_path: "Path"):
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_returns_empty_list_when_not_found(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"readme.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.all("*.py")
 
@@ -152,26 +150,30 @@ class TestAll:
 
         assert result == []
 
-    def test_finds_files_in_nested_directories(self, tmp_path: "Path"):
-        src = tmp_path / "src"
-        tests = tmp_path / "tests"
-        src.mkdir()
-        tests.mkdir()
-        (src / "main.py").touch()
-        (tests / "test_main.py").touch()
-        sp = SearchPath(("project", tmp_path))
+    def test_finds_files_in_nested_directories(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {"main.py": ""},
+                "tests": {"test_main.py": ""},
+            }
+        )
+        src = root / "src"
+        tests = root / "tests"
+        sp = SearchPath(("project", root))
 
         result = sorted(sp.all("**/*.py"))
 
         assert result == sorted([src / "main.py", tests / "test_main.py"])
 
-    def test_multi_entry_search_order(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir1 / "unique_to_dir1.py").touch()
-        (dir2 / "unique_to_dir2.py").touch()
+    def test_multi_entry_search_order(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"unique_to_dir1.py": ""},
+                "dir2": {"unique_to_dir2.py": ""},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.all("*.py")
@@ -181,19 +183,19 @@ class TestAll:
 
 
 class TestMatches:
-    def test_returns_match_objects_with_provenance(self, tmp_path: "Path"):
-        (tmp_path / "config.toml").touch()
-        sp = SearchPath(("project", tmp_path))
+    def test_returns_match_objects_with_provenance(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"config.toml": ""})
+        sp = SearchPath(("project", root))
 
         result = sp.matches("*.toml")
 
         assert len(result) == 1
         assert result[0].scope == "project"
-        assert result[0].source == tmp_path
+        assert result[0].source == root
 
-    def test_returns_empty_list_when_not_found(self, tmp_path: "Path"):
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_returns_empty_list_when_not_found(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"readme.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.matches("*.py")
 
@@ -206,13 +208,15 @@ class TestMatches:
 
         assert result == []
 
-    def test_multi_entry_provenance(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir1 / "file1.py").touch()
-        (dir2 / "file2.py").touch()
+    def test_multi_entry_provenance(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"file1.py": ""},
+                "dir2": {"file2.py": ""},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.matches("*.py")
@@ -227,43 +231,46 @@ class TestMatches:
 
 
 class TestDeduplication:
-    def test_dedupe_true_keeps_first_occurrence(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        _ = (dir1 / "config.toml").write_text("from dir1", encoding="utf-8")
-        _ = (dir2 / "config.toml").write_text("from dir2", encoding="utf-8")
+    @pytest.mark.parametrize(
+        ("dedupe", "expected_count"),
+        [
+            pytest.param(True, 1, id="dedupe-true-keeps-first"),
+            pytest.param(False, 2, id="dedupe-false-returns-all"),
+        ],
+    )
+    def test_all_dedupe_behavior(
+        self,
+        tmp_tree: "TreeFactory",
+        *,
+        dedupe: bool,
+        expected_count: int,
+    ):
+        root = tmp_tree(
+            {
+                "dir1": {"config.toml": "from dir1"},
+                "dir2": {"config.toml": "from dir2"},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
-        result = sp.all("config.toml", dedupe=True)
+        result = sp.all("config.toml", dedupe=dedupe)
 
-        assert len(result) == 1
-        assert result[0] == dir1 / "config.toml"
-
-    def test_dedupe_false_returns_all(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir1 / "config.toml").touch()
-        (dir2 / "config.toml").touch()
-
-        sp = SearchPath(("first", dir1), ("second", dir2))
-        result = sp.all("config.toml", dedupe=False)
-
-        expected_count = 2
         assert len(result) == expected_count
         assert dir1 / "config.toml" in result
-        assert dir2 / "config.toml" in result
+        if not dedupe:
+            assert dir2 / "config.toml" in result
 
-    def test_dedupe_matches_keeps_first_occurrence(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir1 / "config.toml").touch()
-        (dir2 / "config.toml").touch()
+    def test_dedupe_matches_keeps_first_occurrence(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"config.toml": ""},
+                "dir2": {"config.toml": ""},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.matches("config.toml", dedupe=True)
@@ -271,15 +278,15 @@ class TestDeduplication:
         assert len(result) == 1
         assert result[0].scope == "first"
 
-    def test_dedupe_uses_relative_path_as_key(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        sub1 = dir1 / "sub"
-        sub2 = dir2 / "sub"
-        sub1.mkdir(parents=True)
-        sub2.mkdir(parents=True)
-        (sub1 / "file.py").touch()
-        (sub2 / "file.py").touch()
+    def test_dedupe_uses_relative_path_as_key(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"sub": {"file.py": ""}},
+                "dir2": {"sub": {"file.py": ""}},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.matches("**/file.py", dedupe=True)
@@ -288,13 +295,15 @@ class TestDeduplication:
         assert result[0].relative.as_posix() == "sub/file.py"
         assert result[0].scope == "first"
 
-    def test_different_relative_paths_not_deduped(self, tmp_path: "Path"):
-        dir1 = tmp_path / "dir1"
-        dir2 = tmp_path / "dir2"
-        dir1.mkdir()
-        dir2.mkdir()
-        (dir1 / "a.py").touch()
-        (dir2 / "b.py").touch()
+    def test_different_relative_paths_not_deduped(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "dir1": {"a.py": ""},
+                "dir2": {"b.py": ""},
+            }
+        )
+        dir1 = root / "dir1"
+        dir2 = root / "dir2"
 
         sp = SearchPath(("first", dir1), ("second", dir2))
         result = sp.all("*.py", dedupe=True)
@@ -304,264 +313,282 @@ class TestDeduplication:
 
 
 class TestKindFiltering:
-    def test_kind_files_returns_only_files(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "subdir").mkdir()
-        sp = SearchPath(("dir", tmp_path))
+    @pytest.mark.parametrize(
+        ("kind", "expected_name"),
+        [
+            pytest.param("files", "file.py", id="kind-files-returns-only-files"),
+            pytest.param("dirs", "subdir", id="kind-dirs-returns-only-directories"),
+        ],
+    )
+    def test_all_kind_filtering(
+        self,
+        tmp_tree: "TreeFactory",
+        kind: Literal["files", "dirs"],
+        *,
+        expected_name: str,
+    ):
+        root = tmp_tree({"file.py": "", "subdir": {}})
+        sp = SearchPath(("dir", root))
 
-        result = sp.all(kind="files")
+        result = sp.all(kind=kind)
 
         assert len(result) == 1
-        assert result[0] == tmp_path / "file.py"
+        assert result[0] == root / expected_name
 
-    def test_kind_dirs_returns_only_directories(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "subdir").mkdir()
-        sp = SearchPath(("dir", tmp_path))
-
-        result = sp.all(kind="dirs")
-
-        assert len(result) == 1
-        assert result[0] == tmp_path / "subdir"
-
-    def test_kind_both_returns_files_and_directories(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "subdir").mkdir()
-        sp = SearchPath(("dir", tmp_path))
+    def test_kind_both_returns_files_and_directories(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"file.py": "", "subdir": {}})
+        sp = SearchPath(("dir", root))
 
         result = sorted(sp.all(kind="both"))
 
-        assert result == sorted([tmp_path / "file.py", tmp_path / "subdir"])
+        assert result == sorted([root / "file.py", root / "subdir"])
 
-    def test_first_with_kind_dirs(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "subdir").mkdir()
-        sp = SearchPath(("dir", tmp_path))
+    def test_first_with_kind_dirs(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"file.py": "", "subdir": {}})
+        sp = SearchPath(("dir", root))
 
         result = sp.first(kind="dirs")
 
-        assert result == tmp_path / "subdir"
+        assert result == root / "subdir"
 
 
 class TestPatternFileLoading:
-    def test_include_from_single_file(self, tmp_path: "Path"):
-        # Create files
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "config.json").touch()
+    def test_include_from_single_file(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "readme.txt": "",
+                "config.json": "",
+                "patterns.txt": "*.py\n*.txt\n",
+            }
+        )
 
-        # Create include pattern file
-        patterns_file = tmp_path / "patterns.txt"
-        _ = patterns_file.write_text("*.py\n*.txt\n", encoding="utf-8")
-
-        sp = SearchPath(("dir", tmp_path))
-        result = sorted(sp.all(include_from=patterns_file))
+        sp = SearchPath(("dir", root))
+        result = sorted(sp.all(include_from=root / "patterns.txt"))
 
         filtered = [p for p in result if p.name != "patterns.txt"]
-        assert sorted(filtered) == sorted(
-            [tmp_path / "main.py", tmp_path / "readme.txt"]
+        assert sorted(filtered) == sorted([root / "main.py", root / "readme.txt"])
+
+    def test_exclude_from_single_file(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "test_main.py": "",
+                "conftest.py": "",
+                "exclude.txt": "test_*\nconftest.py\n",
+            }
         )
 
-    def test_exclude_from_single_file(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        (tmp_path / "conftest.py").touch()
+        sp = SearchPath(("dir", root))
+        result = sp.all("*.py", exclude_from=root / "exclude.txt")
 
-        exclude_file = tmp_path / "exclude.txt"
-        _ = exclude_file.write_text("test_*\nconftest.py\n", encoding="utf-8")
+        assert result == [root / "main.py"]
 
-        sp = SearchPath(("dir", tmp_path))
-        result = sp.all("*.py", exclude_from=exclude_file)
+    def test_include_from_multiple_files(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "readme.txt": "",
+                "config.json": "",
+                "patterns1.txt": "*.py\n",
+                "patterns2.txt": "*.txt\n",
+            }
+        )
 
-        assert result == [tmp_path / "main.py"]
-
-    def test_include_from_multiple_files(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "config.json").touch()
-
-        patterns1 = tmp_path / "patterns1.txt"
-        patterns2 = tmp_path / "patterns2.txt"
-        _ = patterns1.write_text("*.py\n", encoding="utf-8")
-        _ = patterns2.write_text("*.txt\n", encoding="utf-8")
-
-        sp = SearchPath(("dir", tmp_path))
-        result = sorted(sp.all(include_from=[patterns1, patterns2]))
+        sp = SearchPath(("dir", root))
+        result = sorted(
+            sp.all(include_from=[root / "patterns1.txt", root / "patterns2.txt"])
+        )
 
         filtered = [p for p in result if not p.name.startswith("patterns")]
-        assert sorted(filtered) == sorted(
-            [tmp_path / "main.py", tmp_path / "readme.txt"]
+        assert sorted(filtered) == sorted([root / "main.py", root / "readme.txt"])
+
+    def test_include_combined_with_include_from(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "readme.txt": "",
+                "config.json": "",
+                "patterns.txt": "*.py\n",
+            }
         )
 
-    def test_include_combined_with_include_from(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "config.json").touch()
+        sp = SearchPath(("dir", root))
+        result = sorted(sp.all(include="*.json", include_from=root / "patterns.txt"))
 
-        patterns_file = tmp_path / "patterns.txt"
-        _ = patterns_file.write_text("*.py\n", encoding="utf-8")
+        assert root / "main.py" in result
+        assert root / "config.json" in result
+        assert root / "readme.txt" not in result
 
-        sp = SearchPath(("dir", tmp_path))
-        result = sorted(sp.all(include="*.json", include_from=patterns_file))
+    def test_exclude_combined_with_exclude_from(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "test_main.py": "",
+                "conftest.py": "",
+                "exclude.txt": "test_*\n",
+            }
+        )
 
-        assert tmp_path / "main.py" in result
-        assert tmp_path / "config.json" in result
-        assert tmp_path / "readme.txt" not in result
+        sp = SearchPath(("dir", root))
+        result = sp.all(
+            "*.py", exclude="conftest.py", exclude_from=root / "exclude.txt"
+        )
 
-    def test_exclude_combined_with_exclude_from(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        (tmp_path / "conftest.py").touch()
+        assert result == [root / "main.py"]
 
-        exclude_file = tmp_path / "exclude.txt"
-        _ = exclude_file.write_text("test_*\n", encoding="utf-8")
+    def test_include_from_with_string_path(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "patterns.txt": "*.py\n",
+            }
+        )
 
-        sp = SearchPath(("dir", tmp_path))
-        result = sp.all("*.py", exclude="conftest.py", exclude_from=exclude_file)
+        sp = SearchPath(("dir", root))
+        result = sp.all(include_from=str(root / "patterns.txt"))
 
-        assert result == [tmp_path / "main.py"]
+        assert root / "main.py" in result
 
-    def test_include_from_with_string_path(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-
-        patterns_file = tmp_path / "patterns.txt"
-        _ = patterns_file.write_text("*.py\n", encoding="utf-8")
-
-        sp = SearchPath(("dir", tmp_path))
-        result = sp.all(include_from=str(patterns_file))
-
-        assert tmp_path / "main.py" in result
-
-    def test_include_from_nonexistent_file_raises_error(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        sp = SearchPath(("dir", tmp_path))
-        nonexistent = tmp_path / "missing_patterns.txt"
+    def test_include_from_nonexistent_file_raises_error(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"main.py": ""})
+        sp = SearchPath(("dir", root))
+        nonexistent = root / "missing_patterns.txt"
 
         with pytest.raises(PatternFileError):
             _ = sp.all(include_from=nonexistent)
 
-    def test_exclude_from_nonexistent_file_raises_error(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        sp = SearchPath(("dir", tmp_path))
-        nonexistent = tmp_path / "missing_patterns.txt"
+    def test_exclude_from_nonexistent_file_raises_error(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"main.py": ""})
+        sp = SearchPath(("dir", root))
+        nonexistent = root / "missing_patterns.txt"
 
         with pytest.raises(PatternFileError):
             _ = sp.all("*.py", exclude_from=nonexistent)
 
-    def test_exclude_from_multiple_files(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        (tmp_path / "conftest.py").touch()
+    def test_exclude_from_multiple_files(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "test_main.py": "",
+                "conftest.py": "",
+                "exclude1.txt": "test_*\n",
+                "exclude2.txt": "conftest.py\n",
+            }
+        )
 
-        exclude1 = tmp_path / "exclude1.txt"
-        exclude2 = tmp_path / "exclude2.txt"
-        _ = exclude1.write_text("test_*\n", encoding="utf-8")
-        _ = exclude2.write_text("conftest.py\n", encoding="utf-8")
+        sp = SearchPath(("dir", root))
+        result = sp.all(
+            "*.py", exclude_from=[root / "exclude1.txt", root / "exclude2.txt"]
+        )
 
-        sp = SearchPath(("dir", tmp_path))
-        result = sp.all("*.py", exclude_from=[exclude1, exclude2])
-
-        assert result == [tmp_path / "main.py"]
+        assert result == [root / "main.py"]
 
 
 class TestCustomMatcher:
-    def test_accepts_custom_matcher(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "file.txt").touch()
+    def test_accepts_custom_matcher(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"file.py": "", "file.txt": ""})
 
         matcher = GlobMatcher()
-        sp = SearchPath(("dir", tmp_path))
+        sp = SearchPath(("dir", root))
         result = sp.all("*.py", matcher=matcher)
 
-        assert result == [tmp_path / "file.py"]
+        assert result == [root / "file.py"]
 
 
 class TestEdgeCases:
-    def test_pattern_as_string(self, tmp_path: "Path"):
-        (tmp_path / "config.toml").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_pattern_as_string(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"config.toml": ""})
+        sp = SearchPath(("dir", root))
 
         result = sp.first("*.toml")
 
         assert result is not None
 
-    def test_include_as_string(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    @pytest.mark.parametrize(
+        ("include", "expected_names"),
+        [
+            pytest.param("*.py", ["main.py"], id="include-as-string"),
+            pytest.param(
+                ["*.py", "*.txt"], ["main.py", "readme.txt"], id="include-as-list"
+            ),
+        ],
+    )
+    def test_include_format(
+        self,
+        tmp_tree: "TreeFactory",
+        include: str | list[str],
+        *,
+        expected_names: list[str],
+    ):
+        root = tmp_tree({"main.py": "", "readme.txt": "", "config.json": ""})
+        sp = SearchPath(("dir", root))
 
-        result = sp.all(include="*.py")
+        result = sorted(sp.all(include=include))
 
-        assert result == [tmp_path / "main.py"]
+        expected = sorted([root / name for name in expected_names])
+        assert result == expected
 
-    def test_include_as_list(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "config.json").touch()
-        sp = SearchPath(("dir", tmp_path))
+    @pytest.mark.parametrize(
+        ("exclude", "expected_names"),
+        [
+            pytest.param("test_*", ["main.py", "conftest.py"], id="exclude-as-string"),
+            pytest.param(["test_*", "conftest.py"], ["main.py"], id="exclude-as-list"),
+        ],
+    )
+    def test_exclude_format(
+        self,
+        tmp_tree: "TreeFactory",
+        exclude: str | list[str],
+        *,
+        expected_names: list[str],
+    ):
+        root = tmp_tree({"main.py": "", "test_main.py": "", "conftest.py": ""})
+        sp = SearchPath(("dir", root))
 
-        result = sorted(sp.all(include=["*.py", "*.txt"]))
+        result = sorted(sp.all("*.py", exclude=exclude))
 
-        assert result == sorted([tmp_path / "main.py", tmp_path / "readme.txt"])
+        expected = sorted([root / name for name in expected_names])
+        assert result == expected
 
-    def test_exclude_as_string(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        sp = SearchPath(("dir", tmp_path))
-
-        result = sp.all("*.py", exclude="test_*")
-
-        assert result == [tmp_path / "main.py"]
-
-    def test_exclude_as_list(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        (tmp_path / "conftest.py").touch()
-        sp = SearchPath(("dir", tmp_path))
-
-        result = sp.all("*.py", exclude=["test_*", "conftest.py"])
-
-        assert result == [tmp_path / "main.py"]
-
-    def test_default_pattern_matches_all(self, tmp_path: "Path"):
-        (tmp_path / "file1.py").touch()
-        (tmp_path / "file2.txt").touch()
-        sp = SearchPath(("dir", tmp_path))
+    def test_default_pattern_matches_all(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({"file1.py": "", "file2.txt": ""})
+        sp = SearchPath(("dir", root))
 
         result = sorted(sp.all())
 
-        assert result == sorted([tmp_path / "file1.py", tmp_path / "file2.txt"])
+        assert result == sorted([root / "file1.py", root / "file2.txt"])
 
     @pytest.mark.skipif(
         os.name == "nt",
         reason="Symlinks not always available on Windows",
     )
-    def test_follow_symlinks_true(self, tmp_path: "Path"):
-        real_dir = tmp_path / "real"
-        real_dir.mkdir()
-        (real_dir / "file.py").touch()
-        symlink = tmp_path / "link"
-        symlink.symlink_to(real_dir)
-
-        sp = SearchPath(("dir", tmp_path))
-        result = sorted(sp.all("**/*.py", follow_symlinks=True))
-
-        assert tmp_path / "real" / "file.py" in result
-        assert tmp_path / "link" / "file.py" in result
-
-    @pytest.mark.skipif(
-        os.name == "nt",
-        reason="Symlinks not always available on Windows",
+    @pytest.mark.parametrize(
+        ("follow_symlinks", "expect_link_content"),
+        [
+            pytest.param(True, True, id="follow-symlinks-true"),
+            pytest.param(False, False, id="follow-symlinks-false"),
+        ],
     )
-    def test_follow_symlinks_false(self, tmp_path: "Path"):
-        real_dir = tmp_path / "real"
-        real_dir.mkdir()
-        (real_dir / "file.py").touch()
-        symlink = tmp_path / "link"
-        symlink.symlink_to(real_dir)
+    def test_follow_symlinks_behavior(
+        self,
+        tmp_tree: "TreeFactory",
+        *,
+        follow_symlinks: bool,
+        expect_link_content: bool,
+    ):
+        root = tmp_tree(
+            {
+                "real": {"file.py": ""},
+                "link": Symlink("real"),
+            }
+        )
 
-        sp = SearchPath(("dir", tmp_path))
-        result = sp.all("**/*.py", follow_symlinks=False)
+        sp = SearchPath(("dir", root))
+        result = sorted(sp.all("**/*.py", follow_symlinks=follow_symlinks))
 
-        assert tmp_path / "real" / "file.py" in result
-        assert tmp_path / "link" / "file.py" not in result
+        assert root / "real" / "file.py" in result
+        if expect_link_content:
+            assert root / "link" / "file.py" in result
+        else:
+            assert root / "link" / "file.py" not in result

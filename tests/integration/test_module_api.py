@@ -1,5 +1,3 @@
-"""Integration tests for module-level convenience functions."""
-
 import os
 from typing import TYPE_CHECKING
 

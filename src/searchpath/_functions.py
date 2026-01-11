@@ -1,14 +1,14 @@
 """Module-level convenience functions for one-shot searches."""
 
-from pathlib import Path  # noqa: TC003 - needed at runtime for return types
 from typing import TYPE_CHECKING, Literal
 
-from searchpath._match import Match  # noqa: TC001 - needed at runtime for return types
 from searchpath._searchpath import Entry, SearchPath
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
+    from searchpath._match import Match
     from searchpath._matchers import PathMatcher
 
 
@@ -24,7 +24,7 @@ def first(  # noqa: PLR0913
     exclude_from_ancestors: str | None = None,
     matcher: "PathMatcher | None" = None,
     follow_symlinks: bool = True,
-) -> Path | None:
+) -> "Path | None":
     """Find the first matching path across directories.
 
     Convenience wrapper for SearchPath(*entries).first(pattern, ...).
@@ -75,7 +75,7 @@ def match(  # noqa: PLR0913
     exclude_from_ancestors: str | None = None,
     matcher: "PathMatcher | None" = None,
     follow_symlinks: bool = True,
-) -> Match | None:
+) -> "Match | None":
     """Find the first matching path with provenance information.
 
     Convenience wrapper for SearchPath(*entries).match(pattern, ...).
@@ -129,7 +129,7 @@ def all(  # noqa: A001, PLR0913
     exclude_from_ancestors: str | None = None,
     matcher: "PathMatcher | None" = None,
     follow_symlinks: bool = True,
-) -> list[Path]:
+) -> list["Path"]:
     """Find all matching paths across directories.
 
     Convenience wrapper for SearchPath(*entries).all(pattern, ...).
@@ -183,7 +183,7 @@ def matches(  # noqa: PLR0913
     exclude_from_ancestors: str | None = None,
     matcher: "PathMatcher | None" = None,
     follow_symlinks: bool = True,
-) -> list[Match]:
+) -> list["Match"]:
     """Find all matching paths with provenance information.
 
     Convenience wrapper for SearchPath(*entries).matches(pattern, ...).

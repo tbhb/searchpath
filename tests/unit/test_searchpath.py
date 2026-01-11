@@ -1,30 +1,47 @@
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
 
 from searchpath import SearchPath
 
+if TYPE_CHECKING:
+    from tests.conftest import TreeFactory
+
 
 class TestEntryParsing:
-    def test_tuple_entry_with_path(self):
-        sp = SearchPath(("user", Path("/home/user")))
+    @pytest.mark.parametrize(
+        ("entry", "expected_path"),
+        [
+            pytest.param(("user", Path("/home/user")), Path("/home/user"), id="path"),
+            pytest.param(("user", "/home/user"), Path("/home/user"), id="string"),
+        ],
+    )
+    def test_tuple_entry_types(
+        self, entry: tuple[str, Path | str], expected_path: Path
+    ):
+        sp = SearchPath(entry)
 
-        assert list(sp) == [Path("/home/user")]
+        assert list(sp) == [expected_path]
         assert sp.scopes == ["user"]
 
-    def test_tuple_entry_with_string_path(self):
-        sp = SearchPath(("user", "/home/user"))
+    @pytest.mark.parametrize(
+        ("entries", "expected_scopes"),
+        [
+            pytest.param(
+                (Path("/first"), Path("/second")),
+                ["dir0", "dir1"],
+                id="path-entries",
+            ),
+            pytest.param(("/first", "/second"), ["dir0", "dir1"], id="string-entries"),
+        ],
+    )
+    def test_bare_entries_auto_named(
+        self, entries: tuple[Path | str, ...], expected_scopes: list[str]
+    ):
+        sp = SearchPath(*entries)
 
-        assert list(sp) == [Path("/home/user")]
-
-    def test_bare_path_auto_named(self):
-        sp = SearchPath(Path("/first"), Path("/second"))
-
-        assert sp.scopes == ["dir0", "dir1"]
-        assert list(sp) == [Path("/first"), Path("/second")]
-
-    def test_bare_string_auto_named(self):
-        sp = SearchPath("/first", "/second")
-
-        assert sp.scopes == ["dir0", "dir1"]
+        assert sp.scopes == expected_scopes
 
     def test_none_entry_ignored(self):
         sp = SearchPath(("a", Path("/a")), None, ("b", Path("/b")))
@@ -166,10 +183,10 @@ class TestFilter:
 
 
 class TestExisting:
-    def test_existing_filters_nonexistent(self, tmp_path: Path):
-        existing_dir = tmp_path / "exists"
-        existing_dir.mkdir()
-        missing_dir = tmp_path / "missing"
+    def test_existing_filters_nonexistent(self, fake_tree: "TreeFactory"):
+        root = fake_tree({"exists": {}})
+        existing_dir = root / "exists"
+        missing_dir = root / "missing"
 
         sp = SearchPath(("exists", existing_dir), ("missing", missing_dir))
         filtered = sp.existing()
@@ -177,7 +194,8 @@ class TestExisting:
         assert list(filtered) == [existing_dir]
         assert filtered.scopes == ["exists"]
 
-    def test_existing_with_all_missing(self):
+    def test_existing_with_all_missing(self, fake_tree: "TreeFactory"):
+        _ = fake_tree({})
         sp = SearchPath(
             ("a", Path("/definitely/not/existing/path/abc123")),
             ("b", Path("/another/missing/path/xyz789")),
@@ -217,15 +235,18 @@ class TestIteration:
 
 
 class TestBool:
-    def test_true_when_non_empty(self):
-        sp = SearchPath(("a", Path("/a")))
-
-        assert sp
-
-    def test_false_when_empty(self):
-        sp = SearchPath()
-
-        assert not sp
+    @pytest.mark.parametrize(
+        ("entries", "expected"),
+        [
+            pytest.param((("a", Path("/a")),), True, id="non-empty"),
+            pytest.param((), False, id="empty"),
+        ],
+    )
+    def test_bool_evaluation(
+        self, entries: tuple[tuple[str, Path], ...], *, expected: bool
+    ):
+        sp = SearchPath(*entries)
+        assert bool(sp) == expected
 
     def test_usable_in_if_statement(self):
         sp = SearchPath(("a", Path("/a")))

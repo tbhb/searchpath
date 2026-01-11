@@ -35,9 +35,7 @@ Issues = "https://github.com/tbhb/searchpath/issues"
 Repository = "https://github.com/tbhb/searchpath"
 
 [project.optional-dependencies]
-gitignore = [
-    "pathspec>=1.0.3",
-]
+gitignore = ["pathspec>=1.0.3"]
 
 [dependency-groups]
 dev = [
@@ -74,6 +72,7 @@ pythonVersion = "3.10"
 reportImplicitRelativeImport = "none"
 reportImportCycles = "error"
 allowedUntypedLibraries = ["pyfakefs", "pytest_codspeed", "unittest.mock"]
+strict = ["src", "tests"]
 
 [tool.codespell]
 skip = "coverage.xml,coverage.json,uv.lock,htmlcov,tmp,pnpm-lock.yaml,docs,site,dist,*.cdx.json"
