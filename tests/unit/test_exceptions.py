@@ -54,32 +54,33 @@ class TestPatternSyntaxError:
 
 class TestPatternFileError:
     @pytest.mark.parametrize(
-        ("path", "message", "line_number", "expected"),
+        ("path", "message", "line_number"),
         [
             pytest.param(
                 Path("/config/.gitignore"),
                 "invalid pattern",
                 42,
-                "Error in pattern file /config/.gitignore:42: invalid pattern",
                 id="with-line-number",
             ),
             pytest.param(
                 Path("/config/.gitignore"),
                 "file not found",
                 None,
-                "Error in pattern file /config/.gitignore: file not found",
                 id="without-line-number",
             ),
         ],
     )
-    def test_format(
-        self, path: Path, message: str, line_number: int | None, expected: str
-    ):
+    def test_format(self, path: Path, message: str, line_number: int | None):
         exc = PatternFileError(
             path=path,
             message=message,
             line_number=line_number,
         )
+
+        if line_number is not None:
+            expected = f"Error in pattern file {path}:{line_number}: {message}"
+        else:
+            expected = f"Error in pattern file {path}: {message}"
 
         assert str(exc) == expected
 

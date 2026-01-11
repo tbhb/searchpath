@@ -2227,7 +2227,7 @@ gitignore = [
 dev = [
     { name = "basedpyright" },
     { name = "codespell" },
-    { name = "complexipy" },
+    { name = "complexipy", marker = "python_full_version < '3.14' or sys_platform != 'win32'" },
     { name = "cosmic-ray", marker = "sys_platform != 'win32'" },
     { name = "dirty-equals" },
     { name = "faker" },
@@ -2264,7 +2264,7 @@ provides-extras = ["gitignore"]
 dev = [
     { name = "basedpyright", specifier = ">=1.36.1" },
     { name = "codespell", specifier = ">=2.4.1" },
-    { name = "complexipy", specifier = ">=5.1.0" },
+    { name = "complexipy", marker = "python_full_version < '3.14' or sys_platform != 'win32'", specifier = ">=5.1.0" },
     { name = "cosmic-ray", marker = "sys_platform != 'win32'", specifier = ">=8.4.3" },
     { name = "dirty-equals", specifier = ">=0.11" },
     { name = "faker", specifier = ">=39.0.0" },
