@@ -3,7 +3,13 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeAlias, final
 
+from searchpath._ancestor_patterns import (
+    AncestorPatterns,
+    collect_ancestor_patterns,
+    merge_patterns,
+)
 from searchpath._match import Match
+from searchpath._matchers import GlobMatcher
 from searchpath._traversal import TraversalKind, load_patterns, traverse
 
 if TYPE_CHECKING:
@@ -384,6 +390,32 @@ class SearchPath:
                 seen.add(key)
                 yield match
 
+    def _should_include_with_ancestors(  # noqa: PLR0913
+        self,
+        path: Path,
+        source_resolved: Path,
+        ancestors: AncestorPatterns,
+        include: "Sequence[str]",
+        exclude: "Sequence[str]",
+        matcher: "PathMatcher",
+    ) -> bool:
+        """Check if a path should be included when using ancestor patterns.
+
+        Returns True if the path passes the merged ancestor + inline patterns.
+        """
+        rel_path = path.relative_to(source_resolved).as_posix()
+        is_dir = path.is_dir()
+
+        merged_include = merge_patterns(ancestors.include, include)
+        merged_exclude = merge_patterns(ancestors.exclude, exclude)
+
+        if not merged_include and not merged_exclude:
+            return True
+
+        return matcher.matches(
+            rel_path, is_dir=is_dir, include=merged_include, exclude=merged_exclude
+        )
+
     def _iter_matches(  # noqa: PLR0913
         self,
         pattern: str,
@@ -391,6 +423,8 @@ class SearchPath:
         kind: TraversalKind,
         include: "Sequence[str]",
         exclude: "Sequence[str]",
+        include_from_ancestors: str | None,
+        exclude_from_ancestors: str | None,
         matcher: "PathMatcher | None",
         follow_symlinks: bool,
     ) -> "Iterator[Match]":
@@ -401,12 +435,53 @@ class SearchPath:
             kind: What to yield: "files", "dirs", or "both".
             include: Additional patterns paths must match.
             exclude: Patterns that reject paths.
+            include_from_ancestors: Filename to load include patterns from
+                ancestor directories.
+            exclude_from_ancestors: Filename to load exclude patterns from
+                ancestor directories.
             matcher: PathMatcher implementation.
             follow_symlinks: Whether to follow symbolic links.
 
         Yields:
             Match objects for all matching paths across all entries.
         """
+        use_ancestors = (
+            include_from_ancestors is not None or exclude_from_ancestors is not None
+        )
+
+        if not use_ancestors:
+            yield from self._iter_matches_simple(
+                pattern,
+                kind,
+                include,
+                exclude,
+                matcher,
+                follow_symlinks=follow_symlinks,
+            )
+            return
+
+        yield from self._iter_matches_with_ancestors(
+            pattern,
+            kind,
+            include,
+            exclude,
+            include_from_ancestors,
+            exclude_from_ancestors,
+            matcher,
+            follow_symlinks=follow_symlinks,
+        )
+
+    def _iter_matches_simple(  # noqa: PLR0913
+        self,
+        pattern: str,
+        kind: TraversalKind,
+        include: "Sequence[str]",
+        exclude: "Sequence[str]",
+        matcher: "PathMatcher | None",
+        *,
+        follow_symlinks: bool,
+    ) -> "Iterator[Match]":
+        """Iterate matches without ancestor pattern handling."""
         for scope, source in self._entries:
             for path in traverse(
                 source,
@@ -419,6 +494,52 @@ class SearchPath:
             ):
                 yield Match(path=path, scope=scope, source=source)
 
+    def _iter_matches_with_ancestors(  # noqa: PLR0913
+        self,
+        pattern: str,
+        kind: TraversalKind,
+        include: "Sequence[str]",
+        exclude: "Sequence[str]",
+        include_from_ancestors: str | None,
+        exclude_from_ancestors: str | None,
+        matcher: "PathMatcher | None",
+        *,
+        follow_symlinks: bool,
+    ) -> "Iterator[Match]":
+        """Iterate matches with ancestor pattern handling."""
+        ancestor_cache: dict[Path, list[str]] = {}
+        resolved_matcher = matcher if matcher is not None else GlobMatcher()
+        traverse_include = () if include_from_ancestors is not None else include
+
+        for scope, source in self._entries:
+            source_resolved = source.resolve()
+            for path in traverse(
+                source,
+                pattern=pattern,
+                kind=kind,
+                include=traverse_include,
+                exclude=exclude,
+                matcher=matcher,
+                follow_symlinks=follow_symlinks,
+            ):
+                ancestors = collect_ancestor_patterns(
+                    file_path=path,
+                    entry_root=source_resolved,
+                    include_filename=include_from_ancestors,
+                    exclude_filename=exclude_from_ancestors,
+                    cache=ancestor_cache,
+                )
+
+                if self._should_include_with_ancestors(
+                    path,
+                    source_resolved,
+                    ancestors,
+                    include,
+                    exclude,
+                    resolved_matcher,
+                ):
+                    yield Match(path=path, scope=scope, source=source)
+
     def first(  # noqa: PLR0913
         self,
         pattern: str = "**",
@@ -426,8 +547,10 @@ class SearchPath:
         kind: Literal["files", "dirs", "both"] = "files",
         include: "str | Sequence[str] | None" = None,
         include_from: "Path | str | Sequence[Path | str] | None" = None,
+        include_from_ancestors: str | None = None,
         exclude: "str | Sequence[str] | None" = None,
         exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude_from_ancestors: str | None = None,
         matcher: "PathMatcher | None" = None,
         follow_symlinks: bool = True,
     ) -> Path | None:
@@ -441,8 +564,14 @@ class SearchPath:
             kind: What to match: "files", "dirs", or "both".
             include: Additional patterns paths must match.
             include_from: Path(s) to files containing include patterns.
+            include_from_ancestors: Filename to load include patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             exclude: Patterns that reject paths.
             exclude_from: Path(s) to files containing exclude patterns.
+            exclude_from_ancestors: Filename to load exclude patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             matcher: PathMatcher implementation. Defaults to GlobMatcher.
             follow_symlinks: Whether to follow symbolic links.
 
@@ -465,8 +594,10 @@ class SearchPath:
             kind=kind,
             include=include,
             include_from=include_from,
+            include_from_ancestors=include_from_ancestors,
             exclude=exclude,
             exclude_from=exclude_from,
+            exclude_from_ancestors=exclude_from_ancestors,
             matcher=matcher,
             follow_symlinks=follow_symlinks,
         )
@@ -479,8 +610,10 @@ class SearchPath:
         kind: Literal["files", "dirs", "both"] = "files",
         include: "str | Sequence[str] | None" = None,
         include_from: "Path | str | Sequence[Path | str] | None" = None,
+        include_from_ancestors: str | None = None,
         exclude: "str | Sequence[str] | None" = None,
         exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude_from_ancestors: str | None = None,
         matcher: "PathMatcher | None" = None,
         follow_symlinks: bool = True,
     ) -> Match | None:
@@ -494,8 +627,14 @@ class SearchPath:
             kind: What to match: "files", "dirs", or "both".
             include: Additional patterns paths must match.
             include_from: Path(s) to files containing include patterns.
+            include_from_ancestors: Filename to load include patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             exclude: Patterns that reject paths.
             exclude_from: Path(s) to files containing exclude patterns.
+            exclude_from_ancestors: Filename to load exclude patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             matcher: PathMatcher implementation. Defaults to GlobMatcher.
             follow_symlinks: Whether to follow symbolic links.
 
@@ -522,6 +661,8 @@ class SearchPath:
             kind=kind,
             include=include_patterns,
             exclude=exclude_patterns,
+            include_from_ancestors=include_from_ancestors,
+            exclude_from_ancestors=exclude_from_ancestors,
             matcher=matcher,
             follow_symlinks=follow_symlinks,
         ):
@@ -537,8 +678,10 @@ class SearchPath:
         dedupe: bool = True,
         include: "str | Sequence[str] | None" = None,
         include_from: "Path | str | Sequence[Path | str] | None" = None,
+        include_from_ancestors: str | None = None,
         exclude: "str | Sequence[str] | None" = None,
         exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude_from_ancestors: str | None = None,
         matcher: "PathMatcher | None" = None,
         follow_symlinks: bool = True,
     ) -> list[Path]:
@@ -554,8 +697,14 @@ class SearchPath:
             dedupe: If True, keep only first occurrence per relative path.
             include: Additional patterns paths must match.
             include_from: Path(s) to files containing include patterns.
+            include_from_ancestors: Filename to load include patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             exclude: Patterns that reject paths.
             exclude_from: Path(s) to files containing exclude patterns.
+            exclude_from_ancestors: Filename to load exclude patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             matcher: PathMatcher implementation. Defaults to GlobMatcher.
             follow_symlinks: Whether to follow symbolic links.
 
@@ -579,8 +728,10 @@ class SearchPath:
             dedupe=dedupe,
             include=include,
             include_from=include_from,
+            include_from_ancestors=include_from_ancestors,
             exclude=exclude,
             exclude_from=exclude_from,
+            exclude_from_ancestors=exclude_from_ancestors,
             matcher=matcher,
             follow_symlinks=follow_symlinks,
         )
@@ -594,8 +745,10 @@ class SearchPath:
         dedupe: bool = True,
         include: "str | Sequence[str] | None" = None,
         include_from: "Path | str | Sequence[Path | str] | None" = None,
+        include_from_ancestors: str | None = None,
         exclude: "str | Sequence[str] | None" = None,
         exclude_from: "Path | str | Sequence[Path | str] | None" = None,
+        exclude_from_ancestors: str | None = None,
         matcher: "PathMatcher | None" = None,
         follow_symlinks: bool = True,
     ) -> list[Match]:
@@ -610,8 +763,14 @@ class SearchPath:
             dedupe: If True, keep only first occurrence per relative path.
             include: Additional patterns paths must match.
             include_from: Path(s) to files containing include patterns.
+            include_from_ancestors: Filename to load include patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             exclude: Patterns that reject paths.
             exclude_from: Path(s) to files containing exclude patterns.
+            exclude_from_ancestors: Filename to load exclude patterns from
+                ancestor directories. Patterns are collected from the search
+                entry root toward each file's parent directory.
             matcher: PathMatcher implementation. Defaults to GlobMatcher.
             follow_symlinks: Whether to follow symbolic links.
 
@@ -638,6 +797,8 @@ class SearchPath:
             kind=kind,
             include=include_patterns,
             exclude=exclude_patterns,
+            include_from_ancestors=include_from_ancestors,
+            exclude_from_ancestors=exclude_from_ancestors,
             matcher=matcher,
             follow_symlinks=follow_symlinks,
         )
