@@ -1,7 +1,5 @@
 """Pattern matchers for searchpath."""
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, final
@@ -10,6 +8,8 @@ from searchpath._exceptions import PatternSyntaxError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from pathspec import GitIgnoreSpec
 
 
 @final
@@ -55,8 +55,8 @@ class PathMatcher(Protocol):
         path: str,
         *,
         is_dir: bool = False,
-        include: Sequence[str] = (),
-        exclude: Sequence[str] = (),
+        include: "Sequence[str]" = (),
+        exclude: "Sequence[str]" = (),
     ) -> bool:
         """Check if path matches the include/exclude patterns.
 
@@ -134,8 +134,8 @@ class GlobMatcher:
         path: str,
         *,
         is_dir: bool = False,
-        include: Sequence[str] = (),
-        exclude: Sequence[str] = (),
+        include: "Sequence[str]" = (),
+        exclude: "Sequence[str]" = (),
     ) -> bool:
         """Check if path matches the include/exclude patterns.
 
@@ -439,8 +439,8 @@ class RegexMatcher:
         path: str,
         *,
         is_dir: bool = False,
-        include: Sequence[str] = (),
-        exclude: Sequence[str] = (),
+        include: "Sequence[str]" = (),
+        exclude: "Sequence[str]" = (),
     ) -> bool:
         """Check if path matches the include/exclude patterns.
 
@@ -515,3 +515,143 @@ class RegexMatcher:
         compiled = _CompiledPattern(regex=regex, pattern=pattern)
         self._cache[pattern] = compiled
         return compiled
+
+
+@final
+class GitignoreMatcher:
+    """Path matcher using gitignore-style patterns via pathspec library.
+
+    Provides full gitignore compatibility including:
+        - ``*``: Matches any characters except ``/``
+        - ``**``: Recursive directory matching
+        - ``?``: Matches any single character except ``/``
+        - ``[abc]``: Character classes
+        - ``!pattern``: Negation (un-ignores previously matched paths)
+        - ``pattern/``: Directory-only patterns
+        - ``/pattern``: Anchored patterns (match from root only)
+
+    Requires the optional ``pathspec`` package. Install with::
+
+        pip install searchpath[gitignore]
+
+    Example:
+        >>> matcher = GitignoreMatcher()
+        >>> matcher.matches("src/main.py", include=["*.py"])
+        True
+        >>> matcher.matches("test_main.py", exclude=["test_*"])
+        False
+    """
+
+    __slots__ = ()
+
+    def __init__(self) -> None:
+        """Initialize the matcher, checking for pathspec availability."""
+        try:
+            import pathspec  # noqa: F401, PLC0415  # pyright: ignore[reportUnusedImport]
+        except ImportError as e:  # pragma: no cover
+            msg = (
+                "GitignoreMatcher requires the 'pathspec' package. "
+                "Install it with: pip install searchpath[gitignore]"
+            )
+            raise ImportError(msg) from e
+
+    @property
+    def supports_negation(self) -> bool:
+        """Whether this matcher supports negation patterns.
+
+        Returns:
+            Always True for GitignoreMatcher.
+        """
+        return True
+
+    @property
+    def supports_dir_only(self) -> bool:
+        """Whether this matcher supports directory-only patterns.
+
+        Returns:
+            Always True for GitignoreMatcher.
+        """
+        return True
+
+    def matches(
+        self,
+        path: str,
+        *,
+        is_dir: bool = False,
+        include: "Sequence[str]" = (),
+        exclude: "Sequence[str]" = (),
+    ) -> bool:
+        """Check if path matches the include/exclude patterns.
+
+        Uses gitignore semantics where patterns are evaluated in order and
+        negation patterns (!pattern) can re-include previously excluded paths.
+
+        Args:
+            path: Relative path from search root (forward slashes).
+            is_dir: Whether the path represents a directory.
+            include: Patterns the path must match (empty = match all).
+            exclude: Patterns that reject the path.
+
+        Returns:
+            True if the path should be included in results.
+
+        Raises:
+            PatternSyntaxError: If any pattern has invalid syntax.
+        """
+        del is_dir  # Unused by GitignoreMatcher currently
+
+        # Check include patterns (empty = match all)
+        if include and not self._matches_spec(path, include):
+            return False
+
+        # Check exclude patterns - return False if matches, True otherwise
+        return not (exclude and self._matches_spec(path, exclude))
+
+    def _matches_spec(self, path: str, patterns: "Sequence[str]") -> bool:
+        """Check if path matches gitignore spec built from patterns.
+
+        Args:
+            path: Relative path from search root.
+            patterns: Gitignore-style patterns.
+
+        Returns:
+            True if the path matches the pattern spec.
+
+        Raises:
+            PatternSyntaxError: If any pattern is empty or invalid.
+        """
+        self._validate_patterns(patterns)
+        spec = self._build_spec(patterns)
+        return spec.match_file(path)
+
+    def _validate_patterns(self, patterns: "Sequence[str]") -> None:
+        """Validate that all patterns are non-empty.
+
+        Args:
+            patterns: Patterns to validate.
+
+        Raises:
+            PatternSyntaxError: If any pattern is empty.
+        """
+        for p in patterns:
+            if not p:
+                raise PatternSyntaxError(p, "empty pattern")
+
+    def _build_spec(self, patterns: "Sequence[str]") -> "GitIgnoreSpec":
+        """Build a GitIgnoreSpec from patterns.
+
+        Args:
+            patterns: Gitignore-style patterns.
+
+        Returns:
+            Compiled GitIgnoreSpec.
+
+        Raises:
+            PatternSyntaxError: If patterns have invalid syntax.
+        """
+        from pathspec import GitIgnoreSpec  # noqa: PLC0415
+
+        try:
+            return GitIgnoreSpec.from_lines(patterns)
+        except Exception as e:
+            raise PatternSyntaxError(str(patterns), str(e)) from e

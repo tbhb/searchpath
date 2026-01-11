@@ -34,6 +34,11 @@ Homepage = "https://searchpath.tbhb.dev"
 Issues = "https://github.com/tbhb/searchpath/issues"
 Repository = "https://github.com/tbhb/searchpath"
 
+[project.optional-dependencies]
+gitignore = [
+    "pathspec>=1.0.3",
+]
+
 [dependency-groups]
 dev = [
   "basedpyright>=1.36.1",
