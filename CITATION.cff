@@ -12,4 +12,16 @@ url: "https://searchpath.tbhb.dev"
 license: MIT
 version: "0.1.0a2"
 date-released: "2026-01-12"
-keywords: []
+keywords:
+  - searchpath
+  - file-search
+  - directory-search
+  - path-discovery
+  - pattern-matching
+  - glob
+  - gitignore
+  - pathlib
+  - filesystem
+  - file-finder
+  - config-cascade
+  - provenance-tracking
