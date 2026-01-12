@@ -46,15 +46,16 @@ class SearchPath:
         scopes: List of scope names corresponding to each directory.
 
     Example:
-        >>> from pathlib import Path
-        >>> sp = SearchPath(
-        ...     ("project", Path("/project/.config")),
-        ...     ("user", Path.home() / ".config"),
-        ... )
-        >>> len(sp)
-        2
-        >>> list(sp)  # doctest: +SKIP
-        [PosixPath('/project/.config'), PosixPath('/home/user/.config')]
+        ```python
+        from pathlib import Path
+
+        sp = SearchPath(
+            ("project", Path("/project/.config")),
+            ("user", Path.home() / ".config"),
+        )
+        len(sp)  # 2
+        list(sp)  # [PosixPath('/project/.config'), PosixPath('/home/user/.config')]
+        ```
     """
 
     __slots__ = ("_entries",)
@@ -97,11 +98,12 @@ class SearchPath:
             TypeError: If other is not a SearchPath.
 
         Example:
-            >>> sp1 = SearchPath(("a", Path("/a")))
-            >>> sp2 = SearchPath(("b", Path("/b")))
-            >>> combined = sp1 + sp2
-            >>> list(combined.scopes)
-            ['a', 'b']
+            ```python
+            sp1 = SearchPath(("a", Path("/a")))
+            sp2 = SearchPath(("b", Path("/b")))
+            combined = sp1 + sp2
+            list(combined.scopes)  # ['a', 'b']
+            ```
         """
         if not isinstance(other, SearchPath):
             return NotImplemented  # type: ignore[return-value]
@@ -227,10 +229,11 @@ class SearchPath:
             A new SearchPath with the path components appended.
 
         Example:
-            >>> sp = SearchPath(("user", Path("/home/user")))
-            >>> sp2 = sp.with_suffix(".config", "myapp")
-            >>> list(sp2)
-            [PosixPath('/home/user/.config/myapp')]
+            ```python
+            sp = SearchPath(("user", Path("/home/user")))
+            sp2 = sp.with_suffix(".config", "myapp")
+            list(sp2)  # [PosixPath('/home/user/.config/myapp')]
+            ```
         """
         new_entries = [(scope, path.joinpath(*parts)) for scope, path in self._entries]
         return self._from_entries(new_entries)
@@ -247,8 +250,10 @@ class SearchPath:
             predicate returned True.
 
         Example:
-            >>> sp = SearchPath(("a", Path("/exists")), ("b", Path("/missing")))
-            >>> filtered = sp.filter(lambda p: p.exists())  # doctest: +SKIP
+            ```python
+            sp = SearchPath(("a", Path("/exists")), ("b", Path("/missing")))
+            filtered = sp.filter(lambda p: p.exists())
+            ```
         """
         new_entries = [
             (scope, path) for scope, path in self._entries if predicate(path)
@@ -264,16 +269,18 @@ class SearchPath:
             A new SearchPath containing only directories that exist.
 
         Example:
-            >>> import tempfile
-            >>> from pathlib import Path
-            >>> with tempfile.TemporaryDirectory() as tmp:
-            ...     sp = SearchPath(
-            ...         ("exists", Path(tmp)),
-            ...         ("missing", Path("/no/such/dir")),
-            ...     )
-            ...     existing_sp = sp.existing()
-            ...     len(existing_sp)
-            1
+            ```python
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmp:
+                sp = SearchPath(
+                    ("exists", Path(tmp)),
+                    ("missing", Path("/no/such/dir")),
+                )
+                existing_sp = sp.existing()
+                len(existing_sp)  # 1
+            ```
         """
         return self.filter(lambda p: p.exists())
 
@@ -284,9 +291,11 @@ class SearchPath:
             Tuples of (scope_name, directory_path) in order.
 
         Example:
-            >>> sp = SearchPath(("user", Path("/user")), ("system", Path("/sys")))
-            >>> list(sp.items())
-            [('user', PosixPath('/user')), ('system', PosixPath('/sys'))]
+            ```python
+            sp = SearchPath(("user", Path("/user")), ("system", Path("/sys")))
+            list(sp.items())
+            # [('user', PosixPath('/user')), ('system', PosixPath('/sys'))]
+            ```
         """
         yield from self._entries
 
@@ -583,15 +592,17 @@ class SearchPath:
             The first matching Path, or None if not found.
 
         Example:
-            >>> import tempfile
-            >>> from pathlib import Path
-            >>> with tempfile.TemporaryDirectory() as tmp:
-            ...     d = Path(tmp)
-            ...     (d / "config.toml").touch()
-            ...     sp = SearchPath(("dir", d))
-            ...     result = sp.first("*.toml")
-            ...     result is not None
-            True
+            ```python
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp)
+                (d / "config.toml").touch()
+                sp = SearchPath(("dir", d))
+                result = sp.first("*.toml")
+                result is not None  # True
+            ```
         """
         result = self.match(
             pattern,
@@ -646,15 +657,17 @@ class SearchPath:
             The first Match object, or None if not found.
 
         Example:
-            >>> import tempfile
-            >>> from pathlib import Path
-            >>> with tempfile.TemporaryDirectory() as tmp:
-            ...     d = Path(tmp)
-            ...     (d / "config.toml").touch()
-            ...     sp = SearchPath(("project", d))
-            ...     m = sp.match("*.toml")
-            ...     m is not None and m.scope == "project"
-            True
+            ```python
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp)
+                (d / "config.toml").touch()
+                sp = SearchPath(("project", d))
+                m = sp.match("*.toml")
+                m is not None and m.scope == "project"  # True
+            ```
         """
         include_patterns, exclude_patterns = self._build_patterns(
             include, include_from, exclude, exclude_from
@@ -716,15 +729,17 @@ class SearchPath:
             List of matching Path objects.
 
         Example:
-            >>> import tempfile
-            >>> from pathlib import Path
-            >>> with tempfile.TemporaryDirectory() as tmp:
-            ...     d = Path(tmp)
-            ...     (d / "a.py").touch()
-            ...     (d / "b.py").touch()
-            ...     sp = SearchPath(("dir", d))
-            ...     len(sp.all("*.py")) >= 2
-            True
+            ```python
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp).resolve()
+                (d / "a.py").touch()
+                (d / "b.py").touch()
+                sp = SearchPath(("dir", d))
+                len(sp.all("*.py")) >= 2  # True
+            ```
         """
         match_list = self.matches(
             pattern,
@@ -782,15 +797,17 @@ class SearchPath:
             List of Match objects.
 
         Example:
-            >>> import tempfile
-            >>> from pathlib import Path
-            >>> with tempfile.TemporaryDirectory() as tmp:
-            ...     d = Path(tmp)
-            ...     (d / "config.toml").touch()
-            ...     sp = SearchPath(("project", d))
-            ...     matches = sp.matches("*.toml")
-            ...     len(matches) >= 1 and matches[0].scope == "project"
-            True
+            ```python
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp).resolve()
+                (d / "config.toml").touch()
+                sp = SearchPath(("project", d))
+                matches = sp.matches("*.toml")
+                len(matches) >= 1 and matches[0].scope == "project"  # True
+            ```
         """
         include_patterns, exclude_patterns = self._build_patterns(
             include, include_from, exclude, exclude_from

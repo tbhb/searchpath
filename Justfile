@@ -20,13 +20,33 @@ benchmark *args:
 build: clean-python
   uv build --no-sources
 
+# Build the latest documentation
+build-docs: clean-docs
+  MKDOCS_ENV=latest uv run --group docs mkdocs build --strict
+
+# Build the documentation for PR preview
+[script]
+build-docs-pr number: clean-docs
+  rm -f mkdocs.pr.yml
+  cat << EOF >> mkdocs.pr.yml
+  INHERIT: ./mkdocs.yml
+  site_name: typing-graph Documentation (PR-{{number}})
+  site_url: https://{{number}}-typing-graph-docs-pr.tbhb.workers.dev/
+  EOF
+  uv run --group docs mkdocs build --strict
+  echo "User-Agent: *\nDisallow: /" > site/robots.txt
+
 # Build distribution packages with SBOM
 build-release: build
   #!/usr/bin/env bash
   uv run --frozen --isolated --group release cyclonedx-py environment --of json -o dist/sbom.cdx.json
 
 # Clean build artifacts
-clean: clean-python
+clean: clean-python clean-docs
+
+# Clean documentation build artifacts
+clean-docs:
+  rm -rf site
 
 # Clean Python build artifacts
 clean-python:
@@ -35,6 +55,18 @@ clean-python:
   find . -type d -name __pycache__ -exec rm -rf {} +
   find . -type d -name .pytest_cache -exec rm -rf {} +
   find . -type d -name .ruff_cache -exec rm -rf {} +
+
+# Deploy latest documentation
+deploy-docs: build-docs
+  pnpm exec wrangler deploy --env ""
+
+# Deploy documentation preview
+deploy-docs-pr number: (build-docs-pr number)
+  pnpm exec wrangler versions upload --env preview --preview-alias pr-{{number}}
+
+# Develop the documentation site locally
+dev-docs:
+  uv run --isolated --group docs mkdocs serve --livereload --dev-addr 127.0.0.1:8000
 
 # Format code
 format:
@@ -56,12 +88,17 @@ fix-unsafe:
   biome check --write --unsafe
 
 # Run all linters
-lint: lint-python
-  codespell
-  yamllint --strict .
-  {{pnpm}} biome check .
-  {{pnpm}} markdownlint-cli2 "**/*.md"
+lint: lint-python lint-docs lint-config lint-spelling
 
+# Lint configuration files
+lint-config: lint-json lint-yaml
+
+# Lint documentation
+lint-docs: lint-markdown lint-prose
+
+# Lint JSON files
+lint-json:
+  {{pnpm}} biome check "**/*.json", "**/*.jsonc"
 
 # Lint Markdown files
 lint-markdown:
@@ -90,15 +127,15 @@ lint-python-types *args:
 
 # Lint prose in Markdown files
 lint-prose:
-  vale CODE_OF_CONDUCT.md CONTRIBUTING.md README.md SECURITY.md
+  vale docs/**/*.md CODE_OF_CONDUCT.md CONTRIBUTING.md README.md SECURITY.md
 
 # Check spelling
 lint-spelling:
   codespell
 
-# Lint web files (CSS, HTML, JS, JSON)
-lint-web:
-  {{pnpm}} biome check .
+# Lint YAML files
+lint-yaml:
+  yamllint --strict .
 
 # Install all dependencies (Python + Node.js)
 install: install-node install-python

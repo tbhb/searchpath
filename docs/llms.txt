@@ -1,0 +1,87 @@
+# searchpath
+
+> A Python library for searching ordered directories with pattern matching and provenance tracking. Find files across multiple directories (like config cascades) with full support for glob patterns, gitignore-style exclusions, and tracking where matches came from.
+
+searchpath searches directories in priority order and tells you exactly which directory each match came from. This is essential for config cascades (project overrides user overrides system), plugin discovery, theme loading, and any scenario where files might exist in multiple locations.
+
+Core concepts:
+
+- **SearchPath**: An ordered list of directories to search, with scope names for provenance tracking
+- **Entry**: A directory specification - can be a (scope, path) tuple, bare path, or None (skipped)
+- **Match**: A result object containing the path, scope name, source directory, and relative path
+- **Pattern matchers**: Pluggable matching with GlobMatcher (default), RegexMatcher, or GitignoreMatcher
+
+## Documentation
+
+- [Home](https://searchpath.tbhb.dev/): Project overview and quick example
+- [Installation](https://searchpath.tbhb.dev/install/): pip, uv, Poetry installation options
+- [API reference](https://searchpath.tbhb.dev/reference/api/): Complete reference for all public classes and functions
+
+## Tutorials
+
+- [Your first search](https://searchpath.tbhb.dev/tutorials/first-search/): Learn first(), SearchPath, and entries
+- [Understanding provenance](https://searchpath.tbhb.dev/tutorials/understanding-provenance/): Learn match() and Match objects
+- [Pattern matching](https://searchpath.tbhb.dev/tutorials/pattern-matching/): Glob patterns, includes, and excludes
+- [Multiple directories](https://searchpath.tbhb.dev/tutorials/multiple-directories/): Config cascades and deduplication
+
+## How-to guides
+
+- [Config cascades](https://searchpath.tbhb.dev/guides/config-cascades/): Project overrides user overrides system
+- [Using exclude patterns](https://searchpath.tbhb.dev/guides/exclude-patterns/): Filter out unwanted files
+- [Loading patterns from files](https://searchpath.tbhb.dev/guides/loading-pattern-files/): Use include_from and exclude_from
+- [Choosing a pattern matcher](https://searchpath.tbhb.dev/guides/pattern-matchers/): Glob vs regex vs gitignore
+
+## Explanation
+
+- [Architecture overview](https://searchpath.tbhb.dev/explanation/architecture/): Why searchpath exists and how it works
+- [Pattern matching](https://searchpath.tbhb.dev/explanation/pattern-matching/): Glob, regex, and gitignore patterns
+- [Provenance tracking](https://searchpath.tbhb.dev/explanation/provenance/): Why knowing where files come from matters
+
+## API summary
+
+Module-level convenience functions:
+
+- `first(pattern, *entries, ...)` - Find first matching path, returns Path | None
+- `match(pattern, *entries, ...)` - Find first match with provenance, returns Match | None
+- `all(pattern, *entries, ...)` - Find all matching paths, returns list[Path]
+- `matches(pattern, *entries, ...)` - Find all matches with provenance, returns list[Match]
+
+SearchPath class:
+
+- `SearchPath(*entries)` - Create ordered directory list
+- `sp.first(pattern, ...)` - Find first matching path
+- `sp.match(pattern, ...)` - Find first match with provenance
+- `sp.all(pattern, ...)` - Find all matching paths
+- `sp.matches(pattern, ...)` - Find all matches with provenance
+- `sp.with_suffix(*parts)` - Append path components to all directories
+- `sp.filter(predicate)` - Filter directories by predicate
+- `sp.existing()` - Filter to only existing directories
+
+Match dataclass:
+
+- `match.path` - Absolute path to matched file
+- `match.scope` - Scope name (e.g., "project", "user")
+- `match.source` - Source directory path
+- `match.relative` - Path relative to source directory
+
+Pattern matchers:
+
+- `GlobMatcher` - Default, glob-style patterns (*, **, ?, [abc])
+- `RegexMatcher` - Python regular expressions
+- `GitignoreMatcher` - Full gitignore compatibility (requires pathspec)
+
+Common parameters:
+
+- `pattern` - Glob pattern for matching (default "**" for all)
+- `kind` - What to match: "files", "dirs", or "both"
+- `include` - Additional patterns paths must match
+- `exclude` - Patterns that reject paths
+- `dedupe` - Keep only first occurrence per relative path (default True)
+- `matcher` - PathMatcher implementation to use
+
+## Optional
+
+- [Glossary](https://searchpath.tbhb.dev/reference/glossary/): Definitions of key terms
+- [Changelog](https://searchpath.tbhb.dev/reference/changelog/): Version history
+- [GitHub repository](https://github.com/tbhb/searchpath): Source code
+- [PyPI package](https://pypi.org/project/searchpath/): Package page

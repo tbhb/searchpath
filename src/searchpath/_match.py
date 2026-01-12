@@ -21,14 +21,16 @@ class Match:
         source: The search path directory this match came from.
 
     Example:
-        >>> from pathlib import Path
-        >>> match = Match(
-        ...     path=Path("/home/user/.config/myapp/config.toml"),
-        ...     scope="user",
-        ...     source=Path("/home/user/.config/myapp"),
-        ... )
-        >>> match.relative
-        PosixPath('config.toml')
+        ```python
+        from pathlib import Path
+
+        match = Match(
+            path=Path("/home/user/.config/myapp/config.toml"),
+            scope="user",
+            source=Path("/home/user/.config/myapp"),
+        )
+        match.relative  # PosixPath('config.toml')
+        ```
     """
 
     path: "Path"

@@ -1,0 +1,120 @@
+"""Tests for documentation examples in docs/."""
+
+from pathlib import Path
+
+import pytest
+from pytest_examples import CodeExample, EvalExample, find_examples
+
+from .conftest import check_version_skip
+
+# Patterns that indicate non-executable examples
+SKIP_PATTERNS = [
+    "pip install",
+    "uv add",
+    "poetry add",
+    "# Error!",
+    "# Raises",
+    "# This fails",
+    "# snippet",  # Illustrative code snippets that aren't meant to be executed
+    "# demo",  # Demonstrations with placeholder variables
+]
+
+
+def get_common_globals() -> dict[str, object]:
+    """Provide common imports for documentation examples."""
+    from pathlib import Path, PurePath
+
+    import searchpath
+    from searchpath import (
+        ConfigurationError,
+        Entry,
+        GitignoreMatcher,
+        GlobMatcher,
+        Match,
+        PathMatcher,
+        PatternError,
+        PatternFileError,
+        PatternSyntaxError,
+        RegexMatcher,
+        SearchPath,
+        SearchPathError,
+        all,
+        first,
+        match,
+        matches,
+    )
+
+    return {
+        # Standard library
+        "Path": Path,
+        "PurePath": PurePath,
+        # searchpath module
+        "searchpath": searchpath,
+        # searchpath classes
+        "SearchPath": SearchPath,
+        "Match": Match,
+        "Entry": Entry,
+        # searchpath matchers
+        "PathMatcher": PathMatcher,
+        "GlobMatcher": GlobMatcher,
+        "RegexMatcher": RegexMatcher,
+        "GitignoreMatcher": GitignoreMatcher,
+        # searchpath functions
+        "first": first,
+        "match": match,
+        "all": all,
+        "matches": matches,
+        # searchpath exceptions
+        "SearchPathError": SearchPathError,
+        "PatternError": PatternError,
+        "PatternSyntaxError": PatternSyntaxError,
+        "PatternFileError": PatternFileError,
+        "ConfigurationError": ConfigurationError,
+    }
+
+
+# Store accumulated globals per file to allow examples to build on each other
+_file_globals: dict[Path, dict[str, object]] = {}
+
+
+def _get_globals_for_file(file_path: Path) -> dict[str, object]:
+    """Get or create accumulated globals for a file."""
+    if file_path not in _file_globals:
+        _file_globals[file_path] = get_common_globals()
+    return _file_globals[file_path]
+
+
+def _should_skip_example(example: CodeExample) -> str | None:
+    """Check if an example should be skipped, return reason or None."""
+    prefix_tags = example.prefix_tags()
+    if prefix_tags:
+        python_tags = {"python", "py", "pycon"}
+        if not prefix_tags & python_tags:
+            return f"Non-Python example: {prefix_tags}"
+
+    if any(pattern in example.source for pattern in SKIP_PATTERNS):
+        return "Non-executable example"
+
+    # Version-specific examples
+    if version_skip := check_version_skip(example.source):
+        return version_skip
+
+    return None
+
+
+@pytest.mark.example
+@pytest.mark.parametrize("example", find_examples("docs", "src"), ids=str)
+def test_doc_examples(example: CodeExample, eval_example: EvalExample) -> None:
+    skip_reason = _should_skip_example(example)
+    if skip_reason:
+        pytest.skip(skip_reason)
+
+    # Get accumulated globals for this file (allows examples to build on each other)
+    file_path = example.path
+    module_globals = _get_globals_for_file(file_path)
+
+    # Run the example with accumulated state
+    new_globals = eval_example.run(example, module_globals=module_globals)
+
+    # Update accumulated globals with new definitions from this example
+    module_globals.update(new_globals)

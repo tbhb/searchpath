@@ -92,3 +92,5 @@ tmp/
 .codspeed/
 build/
 .complexipy_cache
+
+site/
