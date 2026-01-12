@@ -1,5 +1,6 @@
 """SearchPath class for ordered directory searching."""
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeAlias, final
 
@@ -12,13 +13,16 @@ from searchpath._match import Match
 from searchpath._matchers import GlobMatcher
 from searchpath._traversal import TraversalKind, load_patterns, traverse
 
+if sys.version_info < (3, 12):
+    from typing_extensions import override
+else:
+    from typing import override  # pyright: ignore[reportUnreachable]
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
     from typing_extensions import Self
 
     from searchpath._matchers import PathMatcher
-
-from typing_extensions import override
 
 Entry: TypeAlias = "tuple[str, Path | str | None] | Path | str | None"
 """Type alias for SearchPath entry arguments."""
