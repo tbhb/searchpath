@@ -10,6 +10,6 @@ authors:
 repository-code: "https://github.com/tbhb/searchpath"
 url: "https://searchpath.tbhb.dev"
 license: MIT
-version: "0.0.0"
-date-released: "2026-01-11"
+version: "0.1.0a1"
+date-released: "2026-01-12"
 keywords: []
