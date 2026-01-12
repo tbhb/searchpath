@@ -10,6 +10,7 @@ from searchpath._exceptions import (
     SearchPathError,
 )
 from searchpath._match import Match
+from searchpath._matchers import GlobMatcher, PathMatcher
 from searchpath._searchpath import Entry, SearchPath
 
 __version__ = version("searchpath")
@@ -17,7 +18,9 @@ __version__ = version("searchpath")
 __all__ = [
     "ConfigurationError",
     "Entry",
+    "GlobMatcher",
     "Match",
+    "PathMatcher",
     "PatternError",
     "PatternFileError",
     "PatternSyntaxError",
