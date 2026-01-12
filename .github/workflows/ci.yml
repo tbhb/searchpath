@@ -48,6 +48,17 @@ jobs:
       - name: Install dependencies
         run: just install
 
+      - name: Cache Vale styles
+        uses: actions/cache@v4
+        with:
+          path: .vale
+          key: vale-styles-${{ hashFiles('.vale.ini') }}
+          restore-keys: |
+            vale-styles-
+
+      - name: Sync Vale styles
+        run: uv run vale sync
+
       - name: Run linters
         run: just lint
 
