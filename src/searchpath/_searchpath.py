@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
     from typing_extensions import Self
 
-    from searchpath._matchers import PathMatcher  # isort: skip
+    from searchpath._matchers import PathMatcher
 
 from typing_extensions import override
 
