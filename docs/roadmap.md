@@ -52,21 +52,6 @@ Optimize repeated searches over the same directories.
 - Build systems with repeated file lookups
 - Long-running applications with stable directory structures
 
-### Directory watching integration
-
-React to filesystem changes in search paths.
-
-**Goals:**
-
-- Integration with watchdog or similar libraries
-- Incremental result updates on file changes
-- Event filtering by pattern
-
-**Use cases:**
-
-- Development servers with hot reloading
-- Build systems with incremental compilation
-
 ## API enhancements
 
 ### Async support
