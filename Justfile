@@ -98,7 +98,7 @@ lint-docs: lint-markdown lint-prose
 
 # Lint JSON files
 lint-json:
-  {{pnpm}} biome check "**/*.json", "**/*.jsonc"
+  {{pnpm}} biome check "**/*.json" "**/*.jsonc"
 
 # Lint Markdown files
 lint-markdown:
