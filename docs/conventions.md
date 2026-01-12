@@ -63,6 +63,7 @@ The documentation uses colored boxes to highlight different types of information
 Method signatures use Python's type annotation syntax. For example:
 
 ```python
+# snippet
 def first(
     pattern: str = "**",
     *entries: Entry,
