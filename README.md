@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 <!-- vale on -->
 
-searchpath is a Python library for searching ordered directories with pattern matching and provenance tracking. It provides a simple API for finding files across a set of directories (like config cascades) with full support for glob patterns, gitignore-style exclusions, and tracking where matches came from.
+searchpath finds files across prioritized directories and tracks where each match comes from. Use it for config cascades (project overrides user overrides system), plugin discovery, or any scenario where files might exist in more than one location and you need to know which one you found.
 
 > [!NOTE]
 > This package is under active development. The API may change before the 1.0 release.
