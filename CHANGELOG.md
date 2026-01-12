@@ -6,6 +6,10 @@ This format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), an
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-01-12
+
+Initial release.
+
 ### Added
 
 - `SearchPath` class for ordered directory searching with scope names for provenance tracking
@@ -21,3 +25,6 @@ This format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), an
 - Exception hierarchy: `SearchPathError`, `PatternError`, `PatternSyntaxError`, `PatternFileError`, `ConfigurationError`
 - Optional `pathspec` dependency for full gitignore compatibility
 - Python 3.10+ support
+
+[Unreleased]: https://github.com/tbhb/searchpath/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/tbhb/searchpath/releases/tag/v0.1.0

@@ -4,9 +4,11 @@ toc_depth: 1
 
 # Changelog
 
-## Unreleased
+For the authoritative changelog, see [CHANGELOG.md](https://github.com/tbhb/searchpath/blob/main/CHANGELOG.md) in the repository.
 
-This section tracks features and changes in development. For the authoritative changelog, see [CHANGELOG.md](https://github.com/tbhb/searchpath/blob/main/CHANGELOG.md) in the repository.
+## 0.1.0 (2026-01-12)
+
+Initial release.
 
 ### Added
 
