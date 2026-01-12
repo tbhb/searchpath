@@ -142,58 +142,60 @@ def _walk_tree(
         ctx.root_path, followlinks=follow_symlinks, onerror=None
     ):
         current_dir = Path(dirpath)
+        rel_posix = current_dir.relative_to(ctx.root_path).as_posix()
+        # relative_to returns "." for the root directory, normalize to empty string
+        current_rel = "" if rel_posix == "." else rel_posix
 
         # Early pruning: remove excluded directories before descending
-        _prune_excluded_dirs(dirnames, current_dir, ctx)
+        _prune_excluded_dirs(dirnames, current_rel, ctx)
 
         # Yield directories if requested
         if ctx.kind in ("dirs", "both"):
-            yield from _yield_matching_entries(dirnames, current_dir, ctx, is_dir=True)
+            yield from _yield_matching_entries(
+                dirnames, current_dir, current_rel, ctx, is_dir=True
+            )
 
         # Yield files if requested
         if ctx.kind in ("files", "both"):
             yield from _yield_matching_entries(
-                filenames, current_dir, ctx, is_dir=False
+                filenames, current_dir, current_rel, ctx, is_dir=False
             )
 
 
 def _prune_excluded_dirs(
     dirnames: list[str],
-    current_dir: Path,
+    current_rel: str,
     ctx: _TraversalContext,
 ) -> None:
     """Remove excluded directories from dirnames in-place to prevent descending."""
     if not ctx.exclude:
         return
 
-    dirs_to_remove = [
+    dirnames[:] = [
         dirname
         for dirname in dirnames
-        if not ctx.matcher.matches(
-            (current_dir / dirname).relative_to(ctx.root_path).as_posix(),
+        if ctx.matcher.matches(
+            f"{current_rel}/{dirname}" if current_rel else dirname,
             is_dir=True,
             include=(),
             exclude=ctx.exclude,
         )
     ]
 
-    for dirname in dirs_to_remove:
-        dirnames.remove(dirname)
-
 
 def _yield_matching_entries(
     names: list[str],
     current_dir: Path,
+    current_rel: str,
     ctx: _TraversalContext,
     *,
     is_dir: bool,
 ) -> "Iterator[Path]":
     """Yield entries that match the include/exclude patterns."""
     for name in names:
-        entry_path = current_dir / name
-        rel_path = entry_path.relative_to(ctx.root_path).as_posix()
+        rel_path = f"{current_rel}/{name}" if current_rel else name
 
         if ctx.matcher.matches(
             rel_path, is_dir=is_dir, include=ctx.include, exclude=ctx.exclude
         ):
-            yield entry_path
+            yield current_dir / name
