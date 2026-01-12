@@ -54,21 +54,6 @@ Optimize repeated searches over the same directories.
 
 ## API enhancements
 
-### Async support
-
-Asynchronous versions of search operations.
-
-**Goals:**
-
-- Async versions of `first()`, `all()`, `match()`, `matches()`
-- Integration with `asyncio` and `trio`
-- Non-blocking directory traversal
-
-**Use cases:**
-
-- Web applications with async request handling
-- Concurrent file discovery operations
-
 ### Streaming results
 
 Iterator-based APIs for memory-efficient large result sets.
