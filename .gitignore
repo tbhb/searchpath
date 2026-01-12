@@ -80,6 +80,7 @@ tmp/
 
 # Vale styles (synced from packages via `vale sync`)
 .vale/
+!.vale/config/vocabularies/searchpath/*.txt
 
 # Wrangler (Cloudflare Workers)
 .wrangler/
