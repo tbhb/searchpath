@@ -2218,6 +2218,11 @@ dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
 
+[package.optional-dependencies]
+gitignore = [
+    { name = "pathspec" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
@@ -2249,7 +2254,11 @@ release = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.15.0" }]
+requires-dist = [
+    { name = "pathspec", marker = "extra == 'gitignore'", specifier = ">=1.0.3" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.15.0" },
+]
+provides-extras = ["gitignore"]
 
 [package.metadata.requires-dev]
 dev = [
