@@ -140,7 +140,7 @@ def fake_tree(fs: "FakeFilesystem") -> TreeFactory:
 
     def create(spec: TreeSpec, root: Path | str | None = None) -> Path:
         if root is None:
-            root_path = Path("/")
+            root_path = Path("/fake_root")
         elif isinstance(root, str):
             root_path = Path(root)
         else:

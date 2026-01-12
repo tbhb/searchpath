@@ -258,11 +258,13 @@ class TestBool:
 
 class TestStrAndRepr:
     def test_str_shows_scope_path_pairs(self):
-        sp = SearchPath(("project", Path("/project")), ("user", Path("/user")))
+        project_path = Path("/project")
+        user_path = Path("/user")
+        sp = SearchPath(("project", project_path), ("user", user_path))
         result = str(sp)
 
-        assert "project: /project" in result
-        assert "user: /user" in result
+        assert f"project: {project_path}" in result
+        assert f"user: {user_path}" in result
 
     def test_str_empty_shows_empty(self):
         sp = SearchPath()
