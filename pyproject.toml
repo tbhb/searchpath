@@ -41,7 +41,7 @@ gitignore = ["pathspec>=1.0.3"]
 dev = [
   "basedpyright>=1.36.1",
   "codespell>=2.4.1",
-  "complexipy>=5.1.0",
+  "complexipy>=5.1.0; sys_platform != 'win32' or python_version < '3.14'",
   "cosmic-ray>=8.4.3; sys_platform != 'win32'",
   "dirty-equals>=0.11",
   "faker>=39.0.0",
