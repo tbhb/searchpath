@@ -1,7 +1,10 @@
 """Match dataclass for search path results."""
 
 from dataclasses import dataclass
-from pathlib import Path  # noqa: TC003 - needed at runtime for dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,17 +31,17 @@ class Match:
         PosixPath('config.toml')
     """
 
-    path: Path
+    path: "Path"
     """Absolute path to the matched file or directory."""
 
     scope: str
     """Scope name of the search path entry (e.g., "user", "project")."""
 
-    source: Path
+    source: "Path"
     """The search path directory this match came from."""
 
     @property
-    def relative(self) -> Path:
+    def relative(self) -> "Path":
         """Path relative to the source directory.
 
         Returns:

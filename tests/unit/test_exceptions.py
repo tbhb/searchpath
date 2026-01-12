@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from searchpath import (
     PatternFileError,
     PatternSyntaxError,
@@ -7,22 +9,35 @@ from searchpath import (
 
 
 class TestPatternSyntaxError:
-    def test_format_with_position(self):
+    @pytest.mark.parametrize(
+        ("pattern", "message", "position", "expected"),
+        [
+            pytest.param(
+                "[invalid",
+                "unclosed bracket",
+                0,
+                "Invalid pattern '[invalid' at position 0: unclosed bracket",
+                id="with-position",
+            ),
+            pytest.param(
+                "**[",
+                "unexpected end of pattern",
+                None,
+                "Invalid pattern '**[': unexpected end of pattern",
+                id="without-position",
+            ),
+        ],
+    )
+    def test_format(
+        self, pattern: str, message: str, position: int | None, expected: str
+    ):
         exc = PatternSyntaxError(
-            pattern="[invalid",
-            message="unclosed bracket",
-            position=0,
+            pattern=pattern,
+            message=message,
+            position=position,
         )
 
-        assert str(exc) == "Invalid pattern '[invalid' at position 0: unclosed bracket"
-
-    def test_format_without_position(self):
-        exc = PatternSyntaxError(
-            pattern="**[",
-            message="unexpected end of pattern",
-        )
-
-        assert str(exc) == "Invalid pattern '**[': unexpected end of pattern"
+        assert str(exc) == expected
 
     def test_attributes_accessible(self):
         position = 4
@@ -38,23 +53,35 @@ class TestPatternSyntaxError:
 
 
 class TestPatternFileError:
-    def test_format_with_line_number(self):
+    @pytest.mark.parametrize(
+        ("path", "message", "line_number", "expected"),
+        [
+            pytest.param(
+                Path("/config/.gitignore"),
+                "invalid pattern",
+                42,
+                "Error in pattern file /config/.gitignore:42: invalid pattern",
+                id="with-line-number",
+            ),
+            pytest.param(
+                Path("/config/.gitignore"),
+                "file not found",
+                None,
+                "Error in pattern file /config/.gitignore: file not found",
+                id="without-line-number",
+            ),
+        ],
+    )
+    def test_format(
+        self, path: Path, message: str, line_number: int | None, expected: str
+    ):
         exc = PatternFileError(
-            path=Path("/config/.gitignore"),
-            message="invalid pattern",
-            line_number=42,
+            path=path,
+            message=message,
+            line_number=line_number,
         )
 
-        expected = "Error in pattern file /config/.gitignore:42: invalid pattern"
         assert str(exc) == expected
-
-    def test_format_without_line_number(self):
-        exc = PatternFileError(
-            path=Path("/config/.gitignore"),
-            message="file not found",
-        )
-
-        assert str(exc) == "Error in pattern file /config/.gitignore: file not found"
 
     def test_attributes_accessible(self):
         path = Path("/some/file")

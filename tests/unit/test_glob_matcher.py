@@ -266,6 +266,64 @@ class TestGlobMatcherErrors:
 
         assert exc_info.value.position == bracket_position
 
+    def test_unclosed_bracket_after_negation_raises(self):
+        matcher = GlobMatcher()
+
+        with pytest.raises(PatternSyntaxError) as exc_info:
+            _ = matcher.matches("file.py", include=["[!"])
+
+        assert exc_info.value.pattern == "[!"
+        assert exc_info.value.position == 0
+        assert "unclosed bracket" in exc_info.value.message
+
+    def test_unclosed_bracket_after_caret_negation_raises(self):
+        matcher = GlobMatcher()
+
+        with pytest.raises(PatternSyntaxError) as exc_info:
+            _ = matcher.matches("file.py", include=["[^"])
+
+        assert exc_info.value.pattern == "[^"
+        assert exc_info.value.position == 0
+        assert "unclosed bracket" in exc_info.value.message
+
+    def test_unclosed_bracket_with_trailing_backslash_raises(self):
+        matcher = GlobMatcher()
+        pattern = "[a\\"  # Pattern: [a\
+
+        with pytest.raises(PatternSyntaxError) as exc_info:
+            _ = matcher.matches("file.py", include=[pattern])
+
+        assert exc_info.value.pattern == pattern
+        assert exc_info.value.position == 0
+        assert "unclosed bracket" in exc_info.value.message
+
+
+class TestGlobMatcherBracketEscapes:
+    def test_backslash_escape_in_bracket(self):
+        matcher = GlobMatcher()
+
+        # Pattern [a\]b] - the \] is an escaped ] inside the bracket
+        # This matches 'a', ']', or 'b'
+        assert matcher.matches("a", include=[r"[a\]b]"])
+        assert matcher.matches("]", include=[r"[a\]b]"])
+        assert matcher.matches("b", include=[r"[a\]b]"])
+
+    def test_escaped_character_in_bracket(self):
+        matcher = GlobMatcher()
+
+        # Pattern [a\nb] - \n is passed through to regex as newline escape
+        assert matcher.matches("a", include=[r"[a\nb]"])
+        assert matcher.matches("\n", include=[r"[a\nb]"])
+        assert matcher.matches("b", include=[r"[a\nb]"])
+        assert not matcher.matches("n", include=[r"[a\nb]"])
+
+    def test_escaped_hyphen_in_bracket(self):
+        matcher = GlobMatcher()
+
+        # Escaped hyphen should be treated as literal
+        assert matcher.matches("-", include=[r"[a\-b]"])
+        assert matcher.matches("a", include=[r"[a\-b]"])
+
 
 class TestGlobMatcherProperties:
     def test_supports_negation_false(self):

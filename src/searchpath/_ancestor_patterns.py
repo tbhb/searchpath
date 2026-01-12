@@ -1,11 +1,11 @@
 """Ancestor pattern loading for hierarchical pattern files."""
 
 from dataclasses import dataclass
-from pathlib import Path  # noqa: TC003 - needed at runtime for function signatures
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,8 +22,8 @@ class AncestorPatterns:
 
 
 def _load_patterns_lenient(
-    path: Path,
-    cache: dict[Path, list[str]] | None,
+    path: "Path",
+    cache: dict["Path", list[str]] | None,
 ) -> list[str]:
     """Load patterns from a file with lenient error handling.
 
@@ -58,7 +58,7 @@ def _load_patterns_lenient(
     return patterns
 
 
-def _collect_ancestor_dirs(file_path: Path, entry_root: Path) -> list[Path]:
+def _collect_ancestor_dirs(file_path: "Path", entry_root: "Path") -> list["Path"]:
     """Collect ancestor directories from entry_root to file's parent.
 
     Args:
@@ -85,11 +85,11 @@ def _collect_ancestor_dirs(file_path: Path, entry_root: Path) -> list[Path]:
 
 
 def collect_ancestor_patterns(
-    file_path: Path,
-    entry_root: Path,
+    file_path: "Path",
+    entry_root: "Path",
     include_filename: str | None,
     exclude_filename: str | None,
-    cache: dict[Path, list[str]] | None = None,
+    cache: dict["Path", list[str]] | None = None,
 ) -> AncestorPatterns:
     """Collect patterns from ancestor directories.
 

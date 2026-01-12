@@ -26,7 +26,7 @@ class _CompiledPattern:
     pattern: str
 
 
-class PathMatcher(Protocol):
+class PathMatcher(Protocol):  # pragma: no cover
     """Protocol for pattern matching implementations.
 
     Path matchers check if paths match include/exclude pattern lists.
@@ -201,7 +201,7 @@ class GlobMatcher:
             A compiled pattern ready for matching.
 
         Raises:
-            PatternSyntaxError: If the pattern is empty or has invalid syntax.
+            PatternSyntaxError: If the pattern is empty or has unclosed brackets.
         """
         if pattern in self._cache:
             return self._cache[pattern]
@@ -210,11 +210,7 @@ class GlobMatcher:
             raise PatternSyntaxError(pattern, "empty pattern")
 
         regex_str = self._glob_to_regex(pattern)
-
-        try:
-            regex = re.compile(regex_str)
-        except re.error as e:
-            raise PatternSyntaxError(pattern, str(e)) from e
+        regex = re.compile(regex_str)
 
         compiled = _CompiledPattern(regex=regex, pattern=pattern)
         self._cache[pattern] = compiled

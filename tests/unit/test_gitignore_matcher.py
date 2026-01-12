@@ -197,6 +197,14 @@ class TestGitignoreMatcherErrors:
         assert exc_info.value.pattern == ""
         assert "empty pattern" in exc_info.value.message
 
+    def test_invalid_pathspec_pattern_raises(self):
+        matcher = GitignoreMatcher()
+
+        with pytest.raises(PatternSyntaxError) as exc_info:
+            _ = matcher.matches("file.py", include=["\\"])
+
+        assert "Invalid git pattern" in exc_info.value.message
+
 
 class TestGitignoreMatcherProperties:
     def test_supports_negation_true(self):

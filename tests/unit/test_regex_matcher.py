@@ -25,50 +25,80 @@ class TestRegexMatchingBasic:
         assert matcher.matches("anything", include=[".*"])
         assert matcher.matches("src/main.py", include=[".*"])
 
-    def test_character_class_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("a.txt", True, id="first-char-in-class"),
+            pytest.param("b.txt", True, id="middle-char-in-class"),
+            pytest.param("c.txt", True, id="last-char-in-class"),
+            pytest.param("d.txt", False, id="char-not-in-class"),
+        ],
+    )
+    def test_character_class_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
+        assert matcher.matches(path, include=["[abc].txt"]) == expected
 
-        assert matcher.matches("a.txt", include=["[abc].txt"])
-        assert matcher.matches("b.txt", include=["[abc].txt"])
-        assert matcher.matches("c.txt", include=["[abc].txt"])
-        assert not matcher.matches("d.txt", include=["[abc].txt"])
-
-    def test_quantifier_plus_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("a", True, id="single-match"),
+            pytest.param("aaa", True, id="multiple-matches"),
+            pytest.param("", False, id="empty-no-match"),
+            pytest.param("b", False, id="different-char-no-match"),
+        ],
+    )
+    def test_quantifier_plus_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
+        assert matcher.matches(path, include=["a+"]) == expected
 
-        assert matcher.matches("a", include=["a+"])
-        assert matcher.matches("aaa", include=["a+"])
-        assert not matcher.matches("", include=["a+"])
-        assert not matcher.matches("b", include=["a+"])
-
-    def test_quantifier_star_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("", True, id="empty-matches"),
+            pytest.param("a", True, id="single-matches"),
+            pytest.param("aaa", True, id="multiple-matches"),
+            pytest.param("b", False, id="different-char-no-match"),
+        ],
+    )
+    def test_quantifier_star_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
+        assert matcher.matches(path, include=["a*"]) == expected
 
-        assert matcher.matches("", include=["a*"])
-        assert matcher.matches("a", include=["a*"])
-        assert matcher.matches("aaa", include=["a*"])
-        assert not matcher.matches("b", include=["a*"])
-
-    def test_quantifier_question_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("", True, id="empty-matches"),
+            pytest.param("a", True, id="single-matches"),
+            pytest.param("aa", False, id="double-no-match"),
+        ],
+    )
+    def test_quantifier_question_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
+        assert matcher.matches(path, include=["a?"]) == expected
 
-        assert matcher.matches("", include=["a?"])
-        assert matcher.matches("a", include=["a?"])
-        assert not matcher.matches("aa", include=["a?"])
-
-    def test_quantifier_braces_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("aaa", True, id="exact-count-matches"),
+            pytest.param("aa", False, id="too-few-no-match"),
+            pytest.param("aaaa", False, id="too-many-no-match"),
+        ],
+    )
+    def test_quantifier_braces_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
+        assert matcher.matches(path, include=["a{3}"]) == expected
 
-        assert matcher.matches("aaa", include=["a{3}"])
-        assert not matcher.matches("aa", include=["a{3}"])
-        assert not matcher.matches("aaaa", include=["a{3}"])
-
-    def test_alternation_matches(self):
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            pytest.param("foo", True, id="first-alternative"),
+            pytest.param("bar", True, id="second-alternative"),
+            pytest.param("baz", False, id="non-matching"),
+        ],
+    )
+    def test_alternation_matches(self, path: str, *, expected: bool):
         matcher = RegexMatcher()
-
-        assert matcher.matches("foo", include=["foo|bar"])
-        assert matcher.matches("bar", include=["foo|bar"])
-        assert not matcher.matches("baz", include=["foo|bar"])
+        assert matcher.matches(path, include=["foo|bar"]) == expected
 
 
 class TestRegexMatchingSpecialCases:

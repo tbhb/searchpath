@@ -9,55 +9,47 @@ from searchpath._traversal import load_patterns
 if TYPE_CHECKING:
     from pyfakefs.fake_filesystem import FakeFilesystem
 
+    from tests.conftest import TreeFactory
+
 
 class TestLoadPatterns:
-    def test_load_patterns_from_file(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="*.py\n*.txt\n")
-        patterns = load_patterns("/patterns.txt")
+    def test_load_patterns_from_file(self, fake_tree: "TreeFactory"):
+        root = fake_tree({"patterns.txt": "*.py\n*.txt\n"})
+        patterns = load_patterns(root / "patterns.txt")
 
         assert patterns == ["*.py", "*.txt"]
 
-    def test_skip_comments(self, fs: "FakeFilesystem"):
-        _ = fs.create_file(
-            "/patterns.txt", contents="# comment\n*.py\n# another\n*.txt"
-        )
-        patterns = load_patterns("/patterns.txt")
+    @pytest.mark.parametrize(
+        "content",
+        [
+            pytest.param("# comment\n*.py\n# another\n*.txt", id="skip-comments"),
+            pytest.param("*.py\n\n\n*.txt\n", id="skip-empty-lines"),
+            pytest.param("  *.py  \n\t*.txt\t\n", id="strip-whitespace"),
+            pytest.param("*.py\n   \n\t\n*.txt", id="whitespace-only-lines-skipped"),
+        ],
+    )
+    def test_load_patterns_filtering(self, fake_tree: "TreeFactory", content: str):
+        root = fake_tree({"patterns.txt": content})
+        patterns = load_patterns(root / "patterns.txt")
 
         assert patterns == ["*.py", "*.txt"]
 
-    def test_skip_empty_lines(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="*.py\n\n\n*.txt\n")
-        patterns = load_patterns("/patterns.txt")
-
-        assert patterns == ["*.py", "*.txt"]
-
-    def test_strip_whitespace(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="  *.py  \n\t*.txt\t\n")
-        patterns = load_patterns("/patterns.txt")
-
-        assert patterns == ["*.py", "*.txt"]
-
-    def test_whitespace_only_lines_skipped(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="*.py\n   \n\t\n*.txt")
-        patterns = load_patterns("/patterns.txt")
-
-        assert patterns == ["*.py", "*.txt"]
-
-    def test_empty_file_returns_empty_list(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="")
-        patterns = load_patterns("/patterns.txt")
+    @pytest.mark.parametrize(
+        "content",
+        [
+            pytest.param("", id="empty-file"),
+            pytest.param("# comment 1\n# comment 2\n", id="comments-only"),
+        ],
+    )
+    def test_load_patterns_empty_result(self, fake_tree: "TreeFactory", content: str):
+        root = fake_tree({"patterns.txt": content})
+        patterns = load_patterns(root / "patterns.txt")
 
         assert patterns == []
 
-    def test_comments_only_returns_empty_list(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="# comment 1\n# comment 2\n")
-        patterns = load_patterns("/patterns.txt")
-
-        assert patterns == []
-
-    def test_accepts_string_path(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="*.py")
-        patterns = load_patterns("/patterns.txt")
+    def test_accepts_string_path(self, fake_tree: "TreeFactory"):
+        root = fake_tree({"patterns.txt": "*.py"})
+        patterns = load_patterns(str(root / "patterns.txt"))
 
         assert patterns == ["*.py"]
 
@@ -68,25 +60,28 @@ class TestLoadPatterns:
         assert exc_info.value.path == Path("/nonexistent.txt")
         assert "file not found" in exc_info.value.message
 
-    def test_permission_denied_raises_pattern_file_error(self, fs: "FakeFilesystem"):
-        _ = fs.create_file("/patterns.txt", contents="*.py")
-        fs.chmod("/patterns.txt", 0o000)
+    def test_permission_denied_raises_pattern_file_error(
+        self, fake_tree: "TreeFactory", fs: "FakeFilesystem"
+    ):
+        # Uses raw fs fixture for chmod() which fake_tree doesn't support
+        root = fake_tree({"patterns.txt": "*.py"})
+        fs.chmod(str(root / "patterns.txt"), 0o000)
 
         with pytest.raises(PatternFileError) as exc_info:
-            _ = load_patterns("/patterns.txt")
+            _ = load_patterns(root / "patterns.txt")
 
         assert "permission denied" in exc_info.value.message
 
-    def test_is_directory_raises_pattern_file_error(self, fs: "FakeFilesystem"):
-        _ = fs.create_dir("/patterns")
+    def test_is_directory_raises_pattern_file_error(self, fake_tree: "TreeFactory"):
+        root = fake_tree({"patterns": {}})
 
         with pytest.raises(PatternFileError) as exc_info:
-            _ = load_patterns("/patterns")
+            _ = load_patterns(root / "patterns")
 
         assert "is a directory" in exc_info.value.message
 
     def test_invalid_encoding_raises_pattern_file_error(self, fs: "FakeFilesystem"):
-        # Create a file with invalid UTF-8 bytes
+        # Uses raw fs fixture for bytes content which fake_tree doesn't support
         _ = fs.create_file("/patterns.txt", contents=b"\xff\xfe")
 
         with pytest.raises(PatternFileError) as exc_info:

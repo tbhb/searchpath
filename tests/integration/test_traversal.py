@@ -1,199 +1,278 @@
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
 from searchpath import GlobMatcher
 from searchpath._traversal import traverse
 
+from tests.conftest import Symlink
+
 if TYPE_CHECKING:
-    from pathlib import Path
+    from tests.conftest import TreeFactory
 
 
 class TestTraverseBasic:
-    def test_basic_file_discovery(self, tmp_path: "Path"):
-        (tmp_path / "file1.py").touch()
-        (tmp_path / "file2.py").touch()
-        (tmp_path / "file.txt").touch()
+    def test_basic_file_discovery(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file1.py": "",
+                "file2.py": "",
+                "file.txt": "",
+            }
+        )
 
-        result = sorted(traverse(tmp_path))
+        result = sorted(traverse(root))
 
         assert result == sorted(
             [
-                tmp_path / "file1.py",
-                tmp_path / "file2.py",
-                tmp_path / "file.txt",
+                root / "file1.py",
+                root / "file2.py",
+                root / "file.txt",
             ]
         )
 
-    def test_directory_discovery_kind_dirs(self, tmp_path: "Path"):
-        (tmp_path / "dir1").mkdir()
-        (tmp_path / "dir2").mkdir()
-        (tmp_path / "file.txt").touch()
+    @pytest.mark.parametrize(
+        ("kind", "expected_names"),
+        [
+            pytest.param("dirs", ["dir1", "dir2"], id="kind-dirs-returns-directories"),
+            pytest.param(
+                "both", ["dir1", "dir2", "file.txt"], id="kind-both-returns-all"
+            ),
+        ],
+    )
+    def test_kind_filtering(
+        self,
+        tmp_tree: "TreeFactory",
+        kind: Literal["dirs", "both"],
+        expected_names: list[str],
+    ):
+        root = tmp_tree(
+            {
+                "dir1": {},
+                "dir2": {},
+                "file.txt": "",
+            }
+        )
 
-        result = sorted(traverse(tmp_path, kind="dirs"))
+        result = sorted(traverse(root, kind=kind))
 
-        assert result == sorted([tmp_path / "dir1", tmp_path / "dir2"])
+        expected = sorted([root / name for name in expected_names])
+        assert result == expected
 
-    def test_both_discovery_kind_both(self, tmp_path: "Path"):
-        (tmp_path / "dir1").mkdir()
-        (tmp_path / "file.txt").touch()
+    def test_pattern_matching_star(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.py": "",
+                "file.txt": "",
+            }
+        )
 
-        result = sorted(traverse(tmp_path, kind="both"))
+        result = list(traverse(root, pattern="*.py"))
 
-        assert result == sorted([tmp_path / "dir1", tmp_path / "file.txt"])
+        assert result == [root / "file.py"]
 
-    def test_pattern_matching_star(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "file.txt").touch()
+    def test_pattern_matching_recursive(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {
+                    "main.py": "",
+                },
+                "test.py": "",
+                "readme.txt": "",
+            }
+        )
 
-        result = list(traverse(tmp_path, pattern="*.py"))
+        result = sorted(traverse(root, pattern="**/*.py"))
 
-        assert result == [tmp_path / "file.py"]
+        assert result == sorted([root / "src" / "main.py", root / "test.py"])
 
-    def test_pattern_matching_recursive(self, tmp_path: "Path"):
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "main.py").touch()
-        (tmp_path / "test.py").touch()
-        (tmp_path / "readme.txt").touch()
+    def test_pattern_matching_specific_dir(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {
+                    "main.py": "",
+                },
+                "tests": {
+                    "test.py": "",
+                },
+            }
+        )
 
-        result = sorted(traverse(tmp_path, pattern="**/*.py"))
+        result = list(traverse(root, pattern="src/*.py"))
 
-        assert result == sorted([src / "main.py", tmp_path / "test.py"])
+        assert result == [root / "src" / "main.py"]
 
-    def test_pattern_matching_specific_dir(self, tmp_path: "Path"):
-        src = tmp_path / "src"
-        tests = tmp_path / "tests"
-        src.mkdir()
-        tests.mkdir()
-        (src / "main.py").touch()
-        (tests / "test.py").touch()
-
-        result = list(traverse(tmp_path, pattern="src/*.py"))
-
-        assert result == [src / "main.py"]
-
-    def test_nonexistent_root_yields_nothing(self, tmp_path: "Path"):
-        nonexistent = tmp_path / "nonexistent"
+    def test_nonexistent_root_yields_nothing(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({})
+        nonexistent = root / "nonexistent"
 
         result = list(traverse(nonexistent))
 
         assert result == []
 
-    def test_file_as_root_yields_nothing(self, tmp_path: "Path"):
-        file_path = tmp_path / "file.txt"
-        file_path.touch()
+    def test_file_as_root_yields_nothing(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.txt": "",
+            }
+        )
 
-        result = list(traverse(file_path))
-
-        assert result == []
-
-    def test_empty_directory_yields_nothing(self, tmp_path: "Path"):
-        result = list(traverse(tmp_path))
+        result = list(traverse(root / "file.txt"))
 
         assert result == []
 
-    def test_nested_directories(self, tmp_path: "Path"):
-        deep = tmp_path / "a" / "b" / "c"
-        deep.mkdir(parents=True)
-        (deep / "file.py").touch()
+    def test_empty_directory_yields_nothing(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree({})
 
-        result = list(traverse(tmp_path, pattern="**/*.py"))
+        result = list(traverse(root))
 
-        assert result == [deep / "file.py"]
+        assert result == []
 
-    def test_accepts_string_path(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
+    def test_nested_directories(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "a": {
+                    "b": {
+                        "c": {
+                            "file.py": "",
+                        },
+                    },
+                },
+            }
+        )
 
-        result = list(traverse(str(tmp_path)))
+        result = list(traverse(root, pattern="**/*.py"))
 
-        assert result == [tmp_path / "file.py"]
+        assert result == [root / "a" / "b" / "c" / "file.py"]
+
+    def test_accepts_string_path(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.py": "",
+            }
+        )
+
+        result = list(traverse(str(root)))
+
+        assert result == [root / "file.py"]
 
 
 class TestTraverseExclude:
-    def test_exclude_patterns_filter_files(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
+    def test_exclude_patterns_filter_files(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "test_main.py": "",
+            }
+        )
 
-        result = list(traverse(tmp_path, pattern="*.py", exclude=["test_*"]))
+        result = list(traverse(root, pattern="*.py", exclude=["test_*"]))
 
-        assert result == [tmp_path / "main.py"]
+        assert result == [root / "main.py"]
 
-    def test_exclude_patterns_prune_directories(self, tmp_path: "Path"):
-        # Create structure: src/main.py, __pycache__/cache.pyc
-        src = tmp_path / "src"
-        cache = tmp_path / "__pycache__"
-        src.mkdir()
-        cache.mkdir()
-        (src / "main.py").touch()
-        (cache / "cache.pyc").touch()
+    def test_exclude_patterns_prune_directories(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {
+                    "main.py": "",
+                },
+                "__pycache__": {
+                    "cache.pyc": "",
+                },
+            }
+        )
 
-        result = list(traverse(tmp_path, exclude=["__pycache__"]))
+        result = list(traverse(root, exclude=["__pycache__"]))
 
         # __pycache__ should be pruned, so cache.pyc should not appear
-        assert tmp_path / "src" / "main.py" in result
-        assert tmp_path / "__pycache__" / "cache.pyc" not in result
+        assert root / "src" / "main.py" in result
+        assert root / "__pycache__" / "cache.pyc" not in result
 
-    def test_exclude_nested_directory(self, tmp_path: "Path"):
-        # Create: src/main.py, src/tests/test.py
-        src = tmp_path / "src"
-        tests = src / "tests"
-        src.mkdir()
-        tests.mkdir()
-        (src / "main.py").touch()
-        (tests / "test.py").touch()
+    def test_exclude_nested_directory(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {
+                    "main.py": "",
+                    "tests": {
+                        "test.py": "",
+                    },
+                },
+            }
+        )
 
-        result = list(traverse(tmp_path, exclude=["**/tests"]))
+        result = list(traverse(root, exclude=["**/tests"]))
 
-        assert tmp_path / "src" / "main.py" in result
-        assert tmp_path / "src" / "tests" / "test.py" not in result
+        assert root / "src" / "main.py" in result
+        assert root / "src" / "tests" / "test.py" not in result
 
-    def test_multiple_exclude_patterns(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "test_main.py").touch()
-        (tmp_path / "main_test.py").touch()
+    def test_multiple_exclude_patterns(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "test_main.py": "",
+                "main_test.py": "",
+            }
+        )
 
-        result = list(traverse(tmp_path, exclude=["test_*", "*_test.py"]))
+        result = list(traverse(root, exclude=["test_*", "*_test.py"]))
 
-        assert result == [tmp_path / "main.py"]
+        assert result == [root / "main.py"]
 
 
 class TestTraverseInclude:
-    def test_include_patterns_filter_files(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
+    def test_include_patterns_filter_files(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "readme.txt": "",
+            }
+        )
 
-        result = list(traverse(tmp_path, include=["*.py"]))
+        result = list(traverse(root, include=["*.py"]))
 
-        assert result == [tmp_path / "main.py"]
+        assert result == [root / "main.py"]
 
-    def test_multiple_include_patterns_or_logic(self, tmp_path: "Path"):
-        (tmp_path / "main.py").touch()
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "config.json").touch()
+    def test_multiple_include_patterns_or_logic(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "main.py": "",
+                "readme.txt": "",
+                "config.json": "",
+            }
+        )
 
-        result = sorted(traverse(tmp_path, include=["*.py", "*.txt"]))
+        result = sorted(traverse(root, include=["*.py", "*.txt"]))
 
-        assert result == sorted([tmp_path / "main.py", tmp_path / "readme.txt"])
+        assert result == sorted([root / "main.py", root / "readme.txt"])
 
-    def test_include_with_pattern_combined(self, tmp_path: "Path"):
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "main.py").touch()
-        (src / "test.py").touch()
-        (tmp_path / "root.py").touch()
-        (tmp_path / "test_root.py").touch()
+    def test_include_with_pattern_combined(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "src": {
+                    "main.py": "",
+                    "test.py": "",
+                },
+                "root.py": "",
+                "test_root.py": "",
+            }
+        )
 
         # pattern=src/*.py combines with include as OR logic
-        result = list(traverse(tmp_path, pattern="src/*.py", include=["test_*"]))
+        result = list(traverse(root, pattern="src/*.py", include=["test_*"]))
 
         # Should match: src/*.py OR test_*
         # src/main.py matches src/*.py -> YES
         # src/test.py matches src/*.py -> YES
         # root.py matches neither -> NO
         # test_root.py matches test_* -> YES
-        expected = sorted([src / "main.py", src / "test.py", tmp_path / "test_root.py"])
+        expected = sorted(
+            [
+                root / "src" / "main.py",
+                root / "src" / "test.py",
+                root / "test_root.py",
+            ]
+        )
         assert sorted(result) == expected
 
 
@@ -201,98 +280,115 @@ class TestTraverseSymlinks:
     @pytest.mark.skipif(
         os.name == "nt", reason="Symlinks not always available on Windows"
     )
-    def test_follow_symlinks_true_follows_symlinks(self, tmp_path: "Path"):
-        # Create: real_dir/file.py and symlink -> real_dir
-        real_dir = tmp_path / "real_dir"
-        real_dir.mkdir()
-        (real_dir / "file.py").touch()
-        symlink = tmp_path / "symlink"
-        symlink.symlink_to(real_dir)
+    @pytest.mark.parametrize(
+        ("follow_symlinks", "expect_link_content"),
+        [
+            pytest.param(True, True, id="follow-symlinks-true-follows-symlinks"),
+            pytest.param(False, False, id="follow-symlinks-false-does-not-follow"),
+        ],
+    )
+    def test_follow_symlinks_behavior(
+        self,
+        tmp_tree: "TreeFactory",
+        *,
+        follow_symlinks: bool,
+        expect_link_content: bool,
+    ):
+        root = tmp_tree(
+            {
+                "real_dir": {
+                    "file.py": "",
+                },
+                "symlink": Symlink("real_dir"),
+            }
+        )
 
-        result = sorted(traverse(tmp_path, follow_symlinks=True))
+        result = sorted(traverse(root, follow_symlinks=follow_symlinks))
 
-        # Should find file.py in both real_dir and through symlink
-        assert tmp_path / "real_dir" / "file.py" in result
-        assert tmp_path / "symlink" / "file.py" in result
+        assert root / "real_dir" / "file.py" in result
+        if expect_link_content:
+            assert root / "symlink" / "file.py" in result
+        else:
+            assert root / "symlink" / "file.py" not in result
 
     @pytest.mark.skipif(
         os.name == "nt", reason="Symlinks not always available on Windows"
     )
-    def test_follow_symlinks_false_does_not_follow(self, tmp_path: "Path"):
-        # Create: real_dir/file.py and symlink -> real_dir
-        real_dir = tmp_path / "real_dir"
-        real_dir.mkdir()
-        (real_dir / "file.py").touch()
-        symlink = tmp_path / "symlink"
-        symlink.symlink_to(real_dir)
+    def test_symlink_to_file(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "real_file.py": "",
+                "symlink.py": Symlink("real_file.py"),
+            }
+        )
 
-        result = list(traverse(tmp_path, follow_symlinks=False))
-
-        # Should only find file.py in real_dir, not through symlink
-        assert tmp_path / "real_dir" / "file.py" in result
-        assert tmp_path / "symlink" / "file.py" not in result
-
-    @pytest.mark.skipif(
-        os.name == "nt", reason="Symlinks not always available on Windows"
-    )
-    def test_symlink_to_file(self, tmp_path: "Path"):
-        # Create: real_file.py and symlink.py -> real_file.py
-        real_file = tmp_path / "real_file.py"
-        real_file.touch()
-        symlink = tmp_path / "symlink.py"
-        symlink.symlink_to(real_file)
-
-        result = sorted(traverse(tmp_path, pattern="*.py"))
+        result = sorted(traverse(root, pattern="*.py"))
 
         # Both should appear as files
-        assert result == sorted([real_file, symlink])
+        assert result == sorted([root / "real_file.py", root / "symlink.py"])
 
     @pytest.mark.skipif(
         os.name == "nt", reason="Symlinks not always available on Windows"
     )
-    def test_broken_symlink_skipped_gracefully(self, tmp_path: "Path"):
-        (tmp_path / "file.txt").touch()
-        broken_link = tmp_path / "broken_link"
-        broken_link.symlink_to(tmp_path / "nonexistent_file")
+    def test_broken_symlink_skipped_gracefully(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.txt": "",
+                "broken_link": Symlink("nonexistent_file"),
+            }
+        )
 
-        result = list(traverse(tmp_path))
+        result = list(traverse(root))
 
-        assert tmp_path / "file.txt" in result
+        assert root / "file.txt" in result
         # broken_link should be skipped or handled gracefully, not raise
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Permission model differs on Windows")
 class TestTraversePermissions:
-    def test_permission_denied_directory_skipped(self, tmp_path: "Path"):
-        restricted = tmp_path / "restricted"
-        restricted.mkdir()
-        (restricted / "secret.txt").touch()
-        (tmp_path / "accessible.txt").touch()
+    def test_permission_denied_directory_skipped(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "restricted": {
+                    "secret.txt": "",
+                },
+                "accessible.txt": "",
+            }
+        )
 
+        restricted = root / "restricted"
         restricted.chmod(0o000)
         try:
-            result = list(traverse(tmp_path))
+            result = list(traverse(root))
             # Should include accessible file, skip restricted dir silently
-            assert tmp_path / "accessible.txt" in result
+            assert root / "accessible.txt" in result
             assert restricted / "secret.txt" not in result
         finally:
             restricted.chmod(0o755)  # Cleanup for test teardown
 
 
 class TestTraverseWithMatcher:
-    def test_custom_matcher(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
-        (tmp_path / "file.txt").touch()
+    def test_custom_matcher(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.py": "",
+                "file.txt": "",
+            }
+        )
 
         matcher = GlobMatcher()
-        result = list(traverse(tmp_path, pattern="*.py", matcher=matcher))
+        result = list(traverse(root, pattern="*.py", matcher=matcher))
 
-        assert result == [tmp_path / "file.py"]
+        assert result == [root / "file.py"]
 
-    def test_default_matcher_is_glob(self, tmp_path: "Path"):
-        (tmp_path / "file.py").touch()
+    def test_default_matcher_is_glob(self, tmp_tree: "TreeFactory"):
+        root = tmp_tree(
+            {
+                "file.py": "",
+            }
+        )
 
         # Without explicit matcher, should use GlobMatcher
-        result = list(traverse(tmp_path, pattern="*.py"))
+        result = list(traverse(root, pattern="*.py"))
 
-        assert result == [tmp_path / "file.py"]
+        assert result == [root / "file.py"]
