@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,7 @@ from searchpath import GlobMatcher, PatternFileError, PatternSyntaxError
 from searchpath._traversal import load_patterns
 
 if TYPE_CHECKING:
+    import pytest_mock
     from pyfakefs.fake_filesystem import FakeFilesystem
 
     from tests.conftest import TreeFactory
@@ -60,6 +62,7 @@ class TestLoadPatterns:
         assert exc_info.value.path == Path("/nonexistent.txt")
         assert "file not found" in exc_info.value.message
 
+    @pytest.mark.skipif(os.name == "nt", reason="chmod doesn't restrict on Windows")
     def test_permission_denied_raises_pattern_file_error(
         self, fake_tree: "TreeFactory", fs: "FakeFilesystem"
     ):
@@ -72,6 +75,19 @@ class TestLoadPatterns:
 
         assert "permission denied" in exc_info.value.message
 
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific permission test")
+    def test_permission_denied_raises_pattern_file_error_windows(
+        self, mocker: "pytest_mock.MockerFixture"
+    ):
+        # Mock Path.read_text to raise PermissionError before pyfakefs intercepts
+        _ = mocker.patch.object(Path, "read_text", side_effect=PermissionError)
+
+        with pytest.raises(PatternFileError) as exc_info:
+            _ = load_patterns(Path("/fake/patterns.txt"))
+
+        assert "permission denied" in exc_info.value.message
+
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-specific error message")
     def test_is_directory_raises_pattern_file_error(self, fake_tree: "TreeFactory"):
         root = fake_tree({"patterns": {}})
 
@@ -79,6 +95,18 @@ class TestLoadPatterns:
             _ = load_patterns(root / "patterns")
 
         assert "is a directory" in exc_info.value.message
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific error message")
+    def test_is_directory_raises_pattern_file_error_windows(
+        self, fake_tree: "TreeFactory"
+    ):
+        root = fake_tree({"patterns": {}})
+
+        with pytest.raises(PatternFileError) as exc_info:
+            _ = load_patterns(root / "patterns")
+
+        # Windows pyfakefs raises PermissionError for directories
+        assert "permission denied" in exc_info.value.message
 
     def test_invalid_encoding_raises_pattern_file_error(self, fs: "FakeFilesystem"):
         # Uses raw fs fixture for bytes content which fake_tree doesn't support
