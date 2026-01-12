@@ -57,8 +57,6 @@ fix-unsafe:
 
 # Run all linters
 lint: lint-python
-  ruff check .
-  basedpyright
   codespell
   yamllint --strict .
   {{pnpm}} biome check .
